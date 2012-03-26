@@ -1,7 +1,8 @@
 /***************************************************************************
- Ice Tube Clock with GPS & Auto DST firmware May 14, 2011
+ Ice Tube Clock with GPS & Auto DST firmware Nov 6, 2011
  (c) 2011 William B Phelps
  
+ 07Nov11 - fix bug, change DST setting to Off, On, Auto
  14May11 - clean up "abrt" vs "adim" - which is better?
  09May11 - capture & display GPS Lat and Long
  27Apr11 - set DST offset on boot & when rules are changed
@@ -58,7 +59,7 @@ uint8_t region = REGION_US;
 // These variables store the current time.
 volatile int8_t time_s, time_m, time_h;
 // ... and current date
-volatile int8_t date_m, date_d, date_y;
+volatile uint8_t date_m, date_d, date_y;
 
 // how loud is the speaker supposed to be?
 volatile uint8_t volume;
@@ -89,13 +90,11 @@ volatile uint8_t restored = 0;
 
 #ifdef FEATURE_WmDST
 volatile uint8_t dst_mode;
+volatile int8_t dst_offset = 0;  // DST adjustment, used by gpssettime
+volatile uint8_t dst_update;  // DST Update allowed now? (Reset at midnight)
 uint8_t dst_rules[9]={3,1,2,2,11,1,1,2,1};   // initial values from US DST rules as of 2011
 const uint8_t dst_rules_lo[]={1,1,1,0,1,1,1,0,0};  // low limit
 const uint8_t dst_rules_hi[]={12,5,7,23,12,5,7,23,1};  // high limit
-//volatile uint8_t dst_rules[]=(3,1,2,2,11,1,1,2,1);  // USA DST starts second sunday in march at 2am, ends first sunday in november at 2am
-//volatile uint8_t dst_set = 0;
-volatile int8_t dst_offset = 0;  // DST adjustment, used by gpssettime
-//static const uint8_t monthDays[]={31,28,31,30,31,30,31,31,30,31,30,31}; // #days by month, starts from jan=0
 static const uint16_t monthDays[]={0,31,59,90,120,151,181,212,243,273,304,334}; // Number of days at the beginning of the month if not leap year
 #endif
 
@@ -443,12 +442,13 @@ SIGNAL(SIG_COMPARATOR) {
     }
   }
 }
+
 /*********************** Main app **********/
 void initeeprom(void) {
   if(eeprom_read_byte((uint8_t *)EE_INIT)!=1)
   {
     eeprom_write_byte((uint8_t*)EE_INIT, 1);  //Initialize one time.
-    eeprom_write_byte((uint8_t*)EE_YEAR, 0);
+    eeprom_write_byte((uint8_t*)EE_YEAR, 11);
     eeprom_write_byte((uint8_t*)EE_MONTH, 1);
     eeprom_write_byte((uint8_t*)EE_DAY, 1);   //Jan 1, 2000
     eeprom_write_byte((uint8_t*)EE_HOUR, 0);
@@ -462,7 +462,7 @@ void initeeprom(void) {
     eeprom_write_byte((uint8_t*)EE_SNOOZE, 10);     //10 Minute Snooze. (If compiled in.)
     eeprom_write_byte((uint8_t*)EE_ZONE_HOUR, -8);     //Zone Hour (GPS)
     eeprom_write_byte((uint8_t*)EE_ZONE_MIN, 0);     //Zone Minute (GPS)
-    eeprom_write_byte((uint8_t*)EE_DST, 0);         //No Daylight Saving Time
+    eeprom_write_byte((uint8_t*)EE_DSTMODE, 0);      //No Daylight Saving Time
     eeprom_write_byte((uint8_t*)EE_GPSENABLE, 0);    //GPS disabled
     eeprom_write_byte((uint8_t*)EE_AUTODIMLO, BRIGHTNESS_MIN);     //Brightness Level Low = 30
     eeprom_write_byte((uint8_t*)EE_AUTODIMHI, BRIGHTNESS_MAX);     //Brightness Level High = 90
@@ -793,8 +793,9 @@ void initbuttons(void) {
     PCMSK2 = _BV(PCINT21) | _BV(PCINT20);    
 }
 
-
+//
 // --------------------------------------- MAIN LOOP -------------------------------------
+//
 int main(void) {
   uint8_t i;
   uint8_t mcustate;
@@ -828,6 +829,10 @@ int main(void) {
   // we lost power at some point so lets alert the user
   // that the time may be wrong (the clock still works)
   timeunknown = 1;
+	
+#ifdef FEATURE_WmDST
+	dst_update = DST_NO;  // block DST updates until clock init complete
+#endif
 
   // have we read the time & date from eeprom?
   restored = 0;
@@ -902,8 +907,8 @@ int main(void) {
 
     region = eeprom_read_byte((uint8_t *)EE_REGION); 
 #ifdef FEATURE_WmDST
-    dst_mode = eeprom_read_byte((uint8_t *)EE_DST);
-		if (dst_mode == DST_ON) {
+    dst_mode = eeprom_read_byte((uint8_t *)EE_DSTMODE);
+		if (dst_mode == DST_AUTO) {
 			i = eeprom_read_byte((uint8_t *)EE_DSTRULE0);  // check rule 0 to see if rules have been saved
 			if (i > 0) {  // first rule is month number, value must be 1 to 12
 				for (i = 0; i < 9; i++) {
@@ -916,6 +921,10 @@ int main(void) {
     gps_enabled = eeprom_read_byte((uint8_t *)EE_GPSENABLE);
 
 		displaymode = NONE;  // prevent display update when clock ticks
+
+    DEBUGP("clock init");
+    clock_init();  // restores time & date from ee, enables interrupts
+	
 		display_str("ice tube");  // say hello
 		delayms(1500);  // wait a bit...
     kickthedog();
@@ -924,12 +933,14 @@ int main(void) {
 		delayms(200);
 		displaymode = SHOW_TIME;
 
-    DEBUGP("clock init");
-    clock_init();  // restores time & date from ee, enables interrupts
+#ifdef FEATURE_WmDST
 //		setDSToffset();  // set DST offset based on restored values
+	dst_update = DST_YES;  // OK to update DST Offset now
+#endif
 		
     DEBUGP("alarm init");
     setalarmstate();
+
 #ifdef FEATURE_TESTMODE
     if(test)
     {
@@ -1137,7 +1148,7 @@ void show_about(void)
     }
     if (just_pressed & 0x2) {
       just_pressed = 0;
-			display_str("110511wm");
+			display_str("111107wm");
 		}
 	}
 }
@@ -1193,6 +1204,15 @@ void set_time(void)
 				time_m = min;
 				time_s = sec;
 				displaymode = SHOW_TIME;
+#ifdef FEATURE_WmDST
+				dst_update = DST_YES;  // Reset DST Update flag
+				setDSToffset(dst_rules);  // Setup Auto DST per current rules
+				dst_update = DST_YES;  // Reset DST Update flag in case time to adjust is soon
+				time_h = hour;  // set hour back to what wsa displayed
+#endif
+				eeprom_write_byte((uint8_t *)EE_HOUR, time_h);    
+				eeprom_write_byte((uint8_t *)EE_MIN, time_m);
+				eeprom_write_byte((uint8_t *)EE_SEC, time_s);
 				return;
       }
     }
@@ -1204,14 +1224,14 @@ void set_time(void)
 				display[1] |= 0x1;
 				display[2] |= 0x1;
 				time_h = hour;
-				eeprom_write_byte((uint8_t *)EE_HOUR, time_h);    
+//				eeprom_write_byte((uint8_t *)EE_HOUR, time_h);    
 			}
       if (mode == SET_MIN) {
 				min = (min+1) % 60;
 				display_time(hour, min, sec);
 				display[4] |= 0x1;
 				display[5] |= 0x1;
-				eeprom_write_byte((uint8_t *)EE_MIN, time_m);
+//				eeprom_write_byte((uint8_t *)EE_MIN, time_m);
 				time_m = min;
 			}
       if ((mode == SET_SEC) ) {
@@ -1228,12 +1248,9 @@ void set_time(void)
   }
 }
 
-
 void set_date(void) {
   uint8_t mode = SHOW_MENU;
-
   timeoutcounter = INACTIVITYTIMEOUT;
-
   while (1) {
     if (just_pressed || pressed) {
       timeoutcounter = INACTIVITYTIMEOUT;
@@ -1247,85 +1264,89 @@ void set_date(void) {
       return;
     }
     if (just_pressed & 0x2) {
-
       just_pressed = 0;
       if (mode == SHOW_MENU) {
 	// start!
-	if (region == REGION_US) {
-	  mode = SET_MONTH;
-	}
-	else {
-	  DEBUGP("Set day");
-	  mode = SET_DAY;
-	}
-	display_date(DATE);
-	display[1] |= 0x1;
-	display[2] |= 0x1;
-      } else if (((mode == SET_MONTH) && (region == REGION_US)) ||
-		 ((mode == SET_DAY) && (region == REGION_EU))) {
-	if (region == REGION_US)
-	  mode = SET_DAY;
-	else
-	  mode = SET_MONTH;
-	display_date(DATE);
-	display[4] |= 0x1;
-	display[5] |= 0x1;
-      } else if (((mode == SET_DAY) && (region == REGION_US)) ||
-	((mode == SET_MONTH) && (region == REGION_EU))) {
-	mode = SET_YEAR;
-	display_date(DATE);
-	display[7] |= 0x1;
-	display[8] |= 0x1;
-      } else {
-	displaymode = NONE;
-	display_date(DATE);
-	delayms(1500);
-	displaymode = SHOW_TIME;
-	return;
-      }
+				if (region == REGION_US) {
+				mode = SET_MONTH;
+				}
+				else {
+					DEBUGP("Set day");
+					mode = SET_DAY;
+				}
+				display_date(DATE);
+				display[1] |= 0x1;
+				display[2] |= 0x1;
+      } else if (((mode == SET_MONTH) && (region == REGION_US)) || ((mode == SET_DAY) && (region == REGION_EU))) {
+				if (region == REGION_US)
+					mode = SET_DAY;
+				else
+					mode = SET_MONTH;
+				display_date(DATE);
+				display[4] |= 0x1;
+				display[5] |= 0x1;
+			} else if (((mode == SET_DAY) && (region == REGION_US)) || ((mode == SET_MONTH) && (region == REGION_EU))) {
+				mode = SET_YEAR;
+				display_date(DATE);
+				display[7] |= 0x1;
+				display[8] |= 0x1;
+			} else {
+				displaymode = NONE;
+				display_date(DATE);
+				delayms(1500);
+				displaymode = SHOW_TIME;
+#ifdef FEATURE_WmDST
+				dst_update = DST_YES;  // Reset DST Update flag
+				setDSToffset(dst_rules);  // Setup Auto DST per current rules
+				dst_update = DST_YES;  // Reset DST Update flag in case time to adjust is soon
+#endif
+				eeprom_write_byte((uint8_t *)EE_MONTH, date_m);    
+				eeprom_write_byte((uint8_t *)EE_DAY, date_d);    
+				eeprom_write_byte((uint8_t *)EE_YEAR, date_y);    
+				return;
+			}
     }
     if ((just_pressed & 0x4) || (pressed & 0x4)) {
       just_pressed = 0;
       if (mode == SET_MONTH) {
-	date_m++;
-	if (date_m >= 13)
-	  date_m = 1;
-	display_date(DATE);
-	if (region == REGION_US) {
-	  display[1] |= 0x1;
-	  display[2] |= 0x1;
-	} else {
-	  display[4] |= 0x1;
-	  display[5] |= 0x1;
-	}
-	eeprom_write_byte((uint8_t *)EE_MONTH, date_m);    
+				date_m++;
+				if (date_m >= 13)
+					date_m = 1;
+				display_date(DATE);
+				if (region == REGION_US) {
+					display[1] |= 0x1;
+					display[2] |= 0x1;
+				} else {
+					display[4] |= 0x1;
+					display[5] |= 0x1;
+				}
+//				eeprom_write_byte((uint8_t *)EE_MONTH, date_m);    
       }
       if (mode == SET_DAY) {
-	date_d++;
-	if (date_d > 31)
-	  date_d = 1;
-	display_date(DATE);
-
-	if (region == REGION_EU) {
-	  display[1] |= 0x1;
-	  display[2] |= 0x1;
-	} else {
-	  display[4] |= 0x1;
-	  display[5] |= 0x1;
-	}
-	eeprom_write_byte((uint8_t *)EE_DAY, date_d);    
+				date_d++;
+				if (date_d > 31)
+					date_d = 1;
+				display_date(DATE);
+				if (region == REGION_EU) {
+					display[1] |= 0x1;
+					display[2] |= 0x1;
+				} else {
+					display[4] |= 0x1;
+					display[5] |= 0x1;
+				}
+//				eeprom_write_byte((uint8_t *)EE_DAY, date_d);    
       }
       if (mode == SET_YEAR) {
-	date_y++;
-	date_y %= 100;
-	display_date(DATE);
-	display[7] |= 0x1;
-	display[8] |= 0x1;
-	eeprom_write_byte((uint8_t *)EE_YEAR, date_y);    
+				date_y++;
+				date_y %= 100;
+				display_date(DATE);
+				display[7] |= 0x1;
+				display[8] |= 0x1;
+//				eeprom_write_byte((uint8_t *)EE_YEAR, date_y);    
       }
 
       if (pressed & 0x4)
-	delayms(60);
+				delayms(60);
     }
   }
 }
@@ -1658,7 +1679,9 @@ void set_dstmode(void) {
       if (mode == SHOW_MENU) {
 				// start!
 				mode = SET_DSTMODE;
-				if (dst_mode == DST_ON)
+				if (dst_mode == DST_AUTO)
+					display_str("dst auto");
+				else if (dst_mode == DST_ON)
 					display_str("dst on  ");
 				else
 					display_str("dst off ");
@@ -1671,14 +1694,31 @@ void set_dstmode(void) {
       just_pressed = 0;
       if (mode == SET_DSTMODE) {
 				if (dst_mode == DST_ON) {
+					dst_mode = DST_AUTO;
+					display_str("dst auto");
+					dst_update = DST_YES;  // allow DST Offset to be adjusted
+					setDSToffset(dst_rules);  // Setup Auto DST per current rules
+					dst_update = DST_YES;  // Reset DST Update flag in case time to adjust is soon
+				} else if (dst_mode == DST_AUTO) {
 					dst_mode = DST_OFF;
 					display_str("dst off ");
-					dst_offset = 0;  // no offset
+					if (dst_offset > 0) {
+						dst_offset = 0;  // no offset
+						time_h--;  // set clock back 1 hour
+						eeprom_write_byte((uint8_t *)EE_DSTOFFSET, dst_offset);
+						eeprom_write_byte((uint8_t *)EE_HOUR, time_h);    
+					}
 				} else {
 					dst_mode = DST_ON;
 					display_str("dst on  ");
+					if (dst_offset == 0)  {
+						dst_offset = 1;  // offset
+						time_h++;
+						eeprom_write_byte((uint8_t *)EE_DSTOFFSET, dst_offset);
+						eeprom_write_byte((uint8_t *)EE_HOUR, time_h);    
+					}
 				}
-			eeprom_write_byte((uint8_t *)EE_DST, dst_mode);
+				eeprom_write_byte((uint8_t *)EE_DSTMODE, dst_mode);
       }
     }
   }
@@ -1741,7 +1781,10 @@ void save_dstrules(uint8_t mod[9]) {
 			ch++;
 			eeprom_write_byte((uint8_t *)EE_DSTRULE0+i, dst_rules[i]);
 		}
-		if (ch)  setDSToffset(dst_rules);  // if rules changed, update DST offset
+		if (ch)  {
+			dst_update = DST_YES;  // allow DST Offset to be adjusted
+			setDSToffset(dst_rules);  // if rules changed, update DST offset
+		}
 	}
 }
 
@@ -1951,11 +1994,14 @@ void set_snoozetime(void) {
 void clock_init(void) {
   // we store the time in EEPROM when switching from power modes so its
   // reasonable to start with whats in memory
+
+  date_y = eeprom_read_byte((uint8_t *)EE_YEAR) % 100;
+  date_m = eeprom_read_byte((uint8_t *)EE_MONTH) % 13;
+  date_d = eeprom_read_byte((uint8_t *)EE_DAY) % 32;
+
   time_h = eeprom_read_byte((uint8_t *)EE_HOUR) % 24;
   time_m = eeprom_read_byte((uint8_t *)EE_MIN) % 60;
   time_s = eeprom_read_byte((uint8_t *)EE_SEC) % 60;
-//	if (time_s == 0)  
-//		time_s ++;  // prevent setDSToffset from running on startup
 
   /*
     // if you're debugging, having the makefile set the right
@@ -1968,10 +2014,6 @@ void clock_init(void) {
   // Set up the stored alarm time and date
   alarm_m = eeprom_read_byte((uint8_t *)EE_ALARM_MIN) % 60;
   alarm_h = eeprom_read_byte((uint8_t *)EE_ALARM_HOUR) % 24;
-
-  date_y = eeprom_read_byte((uint8_t *)EE_YEAR) % 100;
-  date_m = eeprom_read_byte((uint8_t *)EE_MONTH) % 13;
-  date_d = eeprom_read_byte((uint8_t *)EE_DAY) % 32;
 
   restored = 1;
 
@@ -2189,7 +2231,7 @@ uint8_t dotw(uint8_t year, uint8_t month, uint8_t day)
     m += 12;
     y -= 1;
   }
-	return (day + 1 + (2 * m) + (6 * (m+1)/10) + y + (y/4) - (y/100) + (y/400) + 1) % 7;
+	return (day + (2 * m) + (6 * (m+1)/10) + y + (y/4) - (y/100) + (y/400) + 1) % 7 + 1;
 }
 
 /**************************** DISPLAY *****************************/
@@ -2228,7 +2270,6 @@ void display_date(uint8_t style) {
 
   } else if (style == DAY) {
     // This is more "Sunday June 21" style
-
     // Display the day first
     display[8] = display[7] = 0;
     switch (dotw(date_y, date_m, date_d)) {
@@ -2239,7 +2280,7 @@ void display_date(uint8_t style) {
     case 3:
       display_str("tuesday"); break;
     case 4:
-      display_str("wednsday"); break;
+      display_str("wednesdy"); break;
     case 5:
       display_str("thursday"); break;
     case 6:
@@ -2281,6 +2322,15 @@ void display_date(uint8_t style) {
     }
     display[7] = get_number((date_d / 10));
     display[8] = get_number((date_d % 10));
+
+    // wait one second about
+    delayms(1000);
+
+		// display year
+		display_str(" 2000   ");
+    display[4] = get_number((date_y / 10));
+    display[5] = get_number((date_y % 10));
+//    display[8] = display[7] = display[6] = display[5] = 0;
     
   }
 }
@@ -2679,32 +2729,24 @@ void fix_time(void) {
     time_m--;
   }
 
-#ifdef FEATURE_WmDST
-	if (time_s == 0) {  // done once a minute - overkill but it will update for DST when clock is booted or time is adjusted
-    if(dst_mode == DST_ON)  //Check daylight saving time.
-			setDSToffset(dst_rules);  // set DST offset based on DST rules
-		else
-			dst_offset = 0;  // no offset
-	}
-#endif
-
   // an hour...
   if (time_m >= 60) {
     time_m = time_m - 60;
     time_h++; 
-    // let's write the time to the EEPROM - done once per hour but only if GPS is off (otherwise time_m is never > 59)
-		// at 100,000 write cycles this should be good for about 4100 days...
-    eeprom_write_byte((uint8_t *)EE_HOUR, time_h);
-    eeprom_write_byte((uint8_t *)EE_MIN, time_m);
   }
   // When offsets create negative minutes...
   if (time_m < 0) {
     time_m = 60 + time_m;
     time_h--; 
 		// hopefully this does not happen very often
+  }
+
+	if ((time_s == 0) && (time_m == 0) && (gps_enabled == GPS_OFF))  {  // on the hour?
+    // let's write the time to the EEPROM - done once per hour but only if GPS is off
+		// at 100,000 write cycles this should be good for about 4100 days...
     eeprom_write_byte((uint8_t *)EE_HOUR, time_h);
     eeprom_write_byte((uint8_t *)EE_MIN, time_m);
-  }
+	}
 
   // a day....
   if (time_h >= 24) {
@@ -2788,6 +2830,19 @@ void fix_time(void) {
     eeprom_write_byte((uint8_t *)EE_YEAR, date_y);
   }
 
+#ifdef FEATURE_WmDST
+	if (time_s == 0) {  // done once a minute - overkill but it will update for DST when clock is booted or time is adjusted
+    if (dst_mode == DST_AUTO)  //Check daylight saving time.
+			setDSToffset(dst_rules);  // set DST offset based on DST rules
+		else if(dst_mode == DST_ON) 
+			dst_offset = 1;  // fixed offset
+		else
+			dst_offset = 0;  // no offset
+		if ((time_m == 0) && (time_h == 0))  // Midnight?
+			dst_update = DST_YES;  // Reset DST Update flag at midnight
+	}
+#endif
+
 }
 
 
@@ -2805,17 +2860,23 @@ long yearSeconds(uint8_t yr, uint8_t mo, uint8_t da, uint8_t h, uint8_t m, uint8
 long DSTseconds(uint8_t month, uint8_t doftw, uint8_t n, uint8_t hour)
 {
 	uint8_t dom = monthDays[month-1];
-	if ( (date_y %4 == 0) && (month == 2) )
+	if ( (date_y%4 == 0) && (month == 2) )
 		dom ++;  // february has 29 days this year
-	uint8_t dw = dotw(date_y, month, 1);  // DOW for 1st day of month for DST event
-	uint8_t day = doftw - dw;  // number of days until 1st dotw in given month
-	if (day<1)  day += 7;  // make sure it's positive
+	uint8_t dow = dotw(date_y, month, 1);  // DOW for 1st day of month for DST event
+	uint8_t day = doftw - dow;  // number of days until 1st dotw in given month
+//	if (day<1)  day += 7;  // make sure it's positive - doesn't work with uint!
+  if (doftw >= dow)
+    day = doftw - dow;
+  else
+    day = doftw + 7 - dow;
 	day = 1 + day + (n-1)*7;  // date of dotw for this year
 	while (day > dom)  // handles "last DOW" case
 		day -= 7;
   return yearSeconds(date_y,month,day,hour,0,0);  // seconds til DST event this year
 }
 
+// Current US Rules: 3,1,2,2,  11,1,1,2,  1
+// DOTW is Day of the Week.  1=Sunday, 7=Saturday
 void setDSToffset(uint8_t rules[9])
 {
 	uint8_t month1 = rules[0];
@@ -2833,19 +2894,23 @@ void setDSToffset(uint8_t rules[9])
   long seconds_now = yearSeconds(date_y, date_m, date_d, time_h, time_m, time_s);
 	if ((seconds_now >= seconds1) && (seconds_now < seconds2))
 	{  // spring ahead
-		if (dst_offset == 0) {
+		if ((dst_offset == 0) && (dst_update == DST_YES)) {
+			dst_update = DST_NO;  // Only do this once per day
+			dst_offset = offset;
 			time_h += offset;  // if this is the first time, bump the hour
 			eeprom_write_byte((uint8_t *)EE_DSTOFFSET, offset);  // remember setting for power up
+			eeprom_write_byte((uint8_t *)EE_HOUR, time_h);    
 		}
-		dst_offset = offset;
 	}
 	else
 	{  // fall back
-		if (dst_offset >0 )  {
+		if ((dst_offset >0) && (dst_update == DST_YES)) {
+			dst_update = DST_NO;  // Only do this once per day
+			dst_offset = 0;
 			time_h -= offset;  // if this is the first time, bump the hour
 			eeprom_write_byte((uint8_t *)EE_DSTOFFSET, offset);  // remember setting for power up
+			eeprom_write_byte((uint8_t *)EE_HOUR, time_h);    
 		}
-		dst_offset = 0;
 	}
 }
 #endif

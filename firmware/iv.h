@@ -2,6 +2,7 @@
  Ice Tube Clock with GPS firmware April 17, 2011
  (c) 2011 William B Phelps
  
+ 07Nov11 - fix bug, change DST setting to Off, On, Auto
  09May11 - capture & display GPS Lat and Long
  27Apr11 - set DST offset on boot & when rules are changed
  26Apr11 - add DST Rules setting to menu, save in EE
@@ -49,6 +50,9 @@ THE SOFTWARE.
 #ifdef FEATURE_WmDST
   #define DST_OFF 0
   #define DST_ON 33  // value chosen to help detect random EE value
+	#define DST_AUTO 66
+	#define DST_NO  0 
+	#define DST_YES 1  // Clock has been updated for DST Change
 #endif
 
 #define GPS_OFF 0
@@ -56,7 +60,8 @@ THE SOFTWARE.
 
 // Allows Testing of the Hardware.  If FEATURE_AUTODIM is enabled, it will
 // include testing of the hax0r port photocell.
-#define FEATURE_TESTMODE
+//#define FEATURE_TESTMODE
+
 // Allows setting how long a snooze period lasts for. (10 minutes default.)
 // LadyAda implemented this, then commented it out.  I (caitsith2) just turned 
 // it into defines. 
@@ -117,7 +122,7 @@ THE SOFTWARE.
 #define EE_ZONE_HOUR 13
 #define EE_ZONE_MIN 14
 
-#define EE_DST 15
+#define EE_DSTMODE 15
 #define EE_GPSENABLE 16
 
 #define EE_AUTODIM 17
