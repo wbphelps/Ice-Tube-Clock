@@ -1,7 +1,7 @@
 /***************************************************************************
  Ice Tube Clock with GPS & Auto DST firmware Nov 6, 2011
  (c) 2009 Limor Fried / Adafruit Industries
- (c) 2011 William B Phelps
+ (c) 2012 William B Phelps
 
  26Jan12 - drift_correction wasn't working
  12Jan12 - ifdef for GPS support, show adc level
@@ -19,7 +19,7 @@
  20Apr11 - rewrite DST code so it works all the time and with GPS
  18Apr11 - Add option to disable/enable GPS
  
- Ice Tube Clock with GPS firmware July 22, 2010
+ Ice Tube Clock with GPS firmware March 2012
  (c) 2010 Limor Fried / Adafruit Industries
  GPS Capability added by Devlin Thyne
  Ice Tube Clock firmware August 13, 2009

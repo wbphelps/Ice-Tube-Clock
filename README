@@ -1,3 +1,30 @@
  Ice Tube Clock firmware with GPS & working Auto DST support
- William Phelps - wm@usa.net 
+ March 2012 William Phelps - wm (at) usa.net 
+ 
+ Includes the following modifications:
+ 
+ + improvements to GPS support including enable/disable
+	GPS Lat & Long displayed in Menu
+
+ + rewrite of Auto DST so it works with GPS
+  DST update now works regardless of when clock is powered on
+  update occurs once per minute - if clock is powered up "cold" while DST
+  active, DST change will update next time seconds = 00
+	DST Rules in Menu (read code before changing!)
+
+ + changes to auto dim feature
+	lo and hi brightness values in menu
+  use 20k ohm resistor
+  menu option to show ADC and Brightness values
+	press select button to update
+	
+ + added progressive alarm feature
+  alarm starts out with single beep at long(ish) interval
+	more beeps, shorter interval as time elapses
+
+ + incorporated Drift Correction & Seconds Dial features from jsgf (by request)
+
+ + added Last Digit Brightness Boost (LDBB) for vfd tubes with dim right most digit
+
+ + added #IFDEF for GPS support (user request)
  
