@@ -1,3 +1,14 @@
+/* Bit correspondence
+ *  -7-
+ * |   |
+ * 2   6
+ * |   |
+ *  -1-
+ * |   |
+ * 3   5
+ * |   |
+ *  -4-   o0
+ */
 const uint8_t alphatable[] PROGMEM = {
 	0xFA, /* a */
 	0x3E, /* b */

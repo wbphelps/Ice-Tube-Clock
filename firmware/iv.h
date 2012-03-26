@@ -2,6 +2,10 @@
  Ice Tube Clock with GPS firmware November 15, 2011
  (c) 2011 William B Phelps
  
+ 12Jan12 - add ifdef for GPS feature
+ 27Dec11 - add menu option for last digit brightness boost (ldbb)
+ 22Dec11 - add Drift Correction feature
+ 18Nov11 - progressive alarm feature, alarm startup bug
  17Nov11 - GPS vs Alarm bug
  14Nov11 - progressive alarm beeping
  07Nov11 - fix bug, change DST setting to Off, On, Auto
@@ -43,6 +47,11 @@ THE SOFTWARE.
 ****************************************************************************/
 
 // Optional Features - #define these or not as desired.
+#define FEATURE_GPS
+// Last Digit Brightness Boost - helps to even out display brightness on some VFD's
+#define FEATURE_LDBB
+// Drift-correction - changes the basic way the clock keeps time
+#define FEATURE_DRIFTCORR  
 // Auto-dimmer - requires a photocell hooked up to the hax0r port
 #define FEATURE_AUTODIM
 // Display digit "9" in the usual way (instead of the default with no bottom segment)
@@ -56,9 +65,14 @@ THE SOFTWARE.
 	#define DST_NO  0 
 	#define DST_YES 1  // Clock has been updated for DST Change
 #endif
+#define FEATURE_SECSMODE
 
+#ifdef FEATURE_GPS
 #define GPS_OFF 0
 #define GPS_ON  1
+// String buffer size:
+#define GPSBUFFERSIZE 128
+#endif
 
 // Allows Testing of the Hardware.  If FEATURE_AUTODIM is enabled, it will
 // include testing of the hax0r port photocell.
@@ -84,20 +98,20 @@ THE SOFTWARE.
 #define DATE 0  // mm-dd-yy
 #define DAY 1   // thur jan 1
 
-// String buffer size:
-#define GPSBUFFERSIZE 128
-
 #define DISPLAYSIZE 9
 
 #define MAXSNOOZE 600 // 10 minutes
 #define INACTIVITYTIMEOUT 10 // how many seconds we will wait before turning off menus
 
 #define BRITE_MAX 90
+#ifdef FEATURE_AUTODIM
+#define BRITE_MIN 10
+#else
 #define BRITE_MIN 30
+#endif
 #define BRITE_INCREMENT 5
 #define AUTODIM_OFF 0
 #define AUTODIM_ON 1
-#define AUTODIM_MIN 5  // much lower minimum for autodim
 
 #define PHOTOCELL_DARK 1010
 #define PHOTOCELL_LIGHT 100  // wbp (was 500)
@@ -142,6 +156,13 @@ THE SOFTWARE.
 #define EE_DSTRULE8 28
 #define EE_DSTOFFSET 29
 
+#define EE_DRIFTCORR 30
+#define EE_LDBB 31
+#define EE_SECSMODE 32
+
+#define DRIFT_MIN	(-64)
+#define DRIFT_MAX	(64)
+
 void delay(uint16_t delay);
 void _delay_ms(uint32_t __ms);
 void _delay_loop_2(uint16_t __count);
@@ -169,9 +190,10 @@ void display_date(uint8_t style);
 void display_str(char *s);
 void display_alarm(uint8_t h, uint8_t m);
 void display_timezone(int8_t h, uint8_t m);
-void display_brightness(int brightness);
-void display_autodim(int autodim);
+void display_brt(uint8_t brightness);
 void display_dstrule(uint8_t i);
+void display_num(unsigned char pos, int16_t d, uint8_t hilite);
+void display_value(unsigned char, unsigned char n, uint16_t val);
 
 void set_time(void);
 void set_alarm(void);
@@ -180,8 +202,10 @@ void set_date(void);
 void show_about(void);
 void set_brightness(void);
 #ifdef FEATURE_AUTODIM
+void display_autodim(int autodim);
 void set_autobrightness(void);
 void set_autodim(void);
+
 #endif
 void set_volume(void);
 void set_region(void);
@@ -190,10 +214,22 @@ void set_snoozetime(void); // not activated by default
 void set_dstmode(void);
 void set_dstrules(void);
 #endif
+#ifdef FEATURE_GPS
 void set_gpsenable(void);  // wbp
 void show_gpslat(void);  // wbp
 void show_gpslng(void);  // wbp
+#endif
+#ifdef FEATURE_TESTMODE
 void set_test(void);
+#endif
+#ifdef FEATURE_DRIFTCORR
+void set_driftcorr(void);
+#endif
+#ifdef FEATURE_SECSMODE
+void set_secsmode(void);
+void show_secsmode(void);
+#endif
+void set_ldbb(void);
 
 //Checks the alarm against the passed time.
 void check_alarm(uint8_t h, uint8_t m, uint8_t s);
@@ -220,12 +256,14 @@ void setdisplay(uint8_t digit);
 void vfd_send(uint32_t d);
 void spi_xfer(uint8_t c);
 
+#ifdef FEATURE_GPS
 //GPS serial data handling functions:
 uint8_t gpsDataReady(void);
 void getGPSdata(void);
 void getGPStime(void);
 void setgpstime(char* str);
 void setgpsdate(char* str);
+#endif
 
 // displaymode (Menu items)
 enum dispmodes {
@@ -234,21 +272,33 @@ enum dispmodes {
 	SET_ALARM,
 	SET_TIME,
 	SET_DATE,
-	SET_ZONE,
-	SET_GPSENABLE,
+
 #ifdef FEATURE_AUTODIM
 	SET_AUTODIM,
 #endif
 	SET_BRIGHTNESS,
+#ifdef FEATURE_WmDST
+	SET_DSTMODE,
+#endif
+#ifdef FEATURE_DRIFTCORR
+	SET_DRIFTCORR,
+#endif
+#ifdef FEATURE_GPS
+	SET_GPSENABLE,
+#endif
+	SET_LDBB,
 	SET_VOLUME,
 	SET_REGION,
+#ifdef FEATURE_WmDST
+	SET_DSTRULES,
+#endif
+#ifdef FEATURE_SECSMODE
+	SET_SECSMODE,
+#endif
 #ifdef FEATURE_SETSNOOZE
 	SET_SNOOZETIME,
 #endif
-#ifdef FEATURE_WmDST
-	SET_DSTMODE,
-	SET_DSTRULES,
-#endif
+	SET_ZONE,
 #ifdef FEATURE_TESTMODE
 	TESTMODE,
 #endif
@@ -273,6 +323,8 @@ enum dispmodes {
 //brightness (if auto_bright)
 #define SET_AUTODIMLO 1
 #define SET_AUTODIMHI 2
+#define SHOW_ADCLEVEL 3
+#define SHOW_DIMLEVEL 4
 //autodim
 //#define SET_AUTODIM 1
 //volume
@@ -281,12 +333,14 @@ enum dispmodes {
 #define SET_REG 1
 //dst
 #define SET_DST 1
+#ifdef FEATURE_GPS
 //gps
 #define SET_GPS 1
 #define SHOW_GPSLAT1 2
 #define SHOW_GPSLAT2 3
 #define SHOW_GPSLONG1 4
 #define SHOW_GPSLONG2 5
+#endif
 
 #define BOOST PD6
 #define BOOST_DDR DDRD

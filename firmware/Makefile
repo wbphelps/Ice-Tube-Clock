@@ -100,11 +100,13 @@ LDFLAGS = -Wl,-Map=$(TARGET).map,--cref
 #
 #AVRDUDE_PROGRAMMER = dt006
 #AVRDUDE_PROGRAMMER = stk500v2
-AVRDUDE_PROGRAMMER = usbtiny
-#AVRDUDE_PROGRAMMER = arduino
+#AVRDUDE_PROGRAMMER = usbtiny
+AVRDUDE_PROGRAMMER = arduino
 
+#AVRDUDE_BAUD = 115200  # for usbtiny ?
+AVRDUDE_BAUD = 19200  # for Arduino used as programmer
 
-AVRDUDE_PORT = COM10	   # programmer connected to serial device
+AVRDUDE_PORT = COM9	   # programmer connected to serial device
 #AVRDUDE_PORT = /dev/cu.KeySerial1	   # programmer connected to serial device
 #AVRDUDE_PORT = /dev/cu.PL2303-0B2
 #AVRDUDE_PORT = lpt1	# programmer connected to parallel port
@@ -112,7 +114,7 @@ AVRDUDE_PORT = COM10	   # programmer connected to serial device
 AVRDUDE_WRITE_FLASH = -U flash:w:$(TARGET).hex
 AVRDUDE_WRITE_EEPROM = -U eeprom:w:$(TARGET).eep
 
-AVRDUDE_FLAGS = -p $(MCU) -P $(AVRDUDE_PORT) -c $(AVRDUDE_PROGRAMMER)
+AVRDUDE_FLAGS = -p $(MCU) -P $(AVRDUDE_PORT) -c $(AVRDUDE_PROGRAMMER) -b $(AVRDUDE_BAUD)
 
 # Uncomment the following if you want avrdude's erase cycle counter.
 # Note that this counter needs to be initialized first using -Yn,
@@ -129,8 +131,6 @@ AVRDUDE_FLAGS = -p $(MCU) -P $(AVRDUDE_PORT) -c $(AVRDUDE_PROGRAMMER)
 #AVRDUDE_FLAGS += -v -v
 
 AVRDUDE_BFLAG = -B 1
-
-
 
 
 # ---------------------------------------------------------------------------
@@ -184,8 +184,6 @@ MSG_ASSEMBLING = Assembling:
 MSG_CLEANING = Cleaning project:
 
 
-
-
 # Define all object files.
 OBJ = $(SRC:.c=.o) $(ASRC:.S=.o) 
 
@@ -203,11 +201,14 @@ ALL_ASFLAGS = -mmcu=$(MCU) -I. -x assembler-with-cpp $(ASFLAGS)
 all: begin gccversion sizebefore $(TARGET).elf $(TARGET).hex $(TARGET).eep \
 	$(TARGET).lss $(TARGET).sym sizeafter finished end
 
-full: $(TARGET).hex $(TARGET)eep.hex
+full: $(TARGET).hex $(TARGET).eep
 	$(AVRDUDE) $(AVRDUDE_FLAGS) -u -U lfuse:w:0xE2:m -u -U hfuse:w:0xC6:m
-	$(AVRDUDE) $(AVRDUDE_FLAGS) $(AVRDUDE_BFLAG) -U flash:w:$< 
-	$(AVRDUDE) $(AVRDUDE_FLAGS) $(AVRDUDE_BFLAG) -U eeprom:w:iveep.hex
+	$(AVRDUDE) $(AVRDUDE_FLAGS) $(AVRDUDE_BFLAG) $(AVRDUDE_WRITE_FLASH)
+	$(AVRDUDE) $(AVRDUDE_FLAGS) $(AVRDUDE_BFLAG) $(AVRDUDE_WRITE_EEPROM)
 
+# Program the device.  
+program: $(TARGET).hex $(TARGET).eep
+	$(AVRDUDE) $(AVRDUDE_FLAGS) $(AVRDUDE_BFLAG) $(AVRDUDE_WRITE_FLASH)
 
 burn-fuse: 
 	$(AVRDUDE) $(AVRDUDE_FLAGS) $(AVRDUDE_BFLAG) -u -U lfuse:w:0xE2:m -u -U hfuse:w:0xC6:m 
@@ -266,12 +267,6 @@ extcoff: $(TARGET).elf
 	@echo $(MSG_EXTENDED_COFF) $(TARGET).cof
 	$(COFFCONVERT) -O coff-ext-avr $< $(TARGET).cof
 
-
-
-
-# Program the device.  
-program: $(TARGET).hex $(TARGET).eep
-	$(AVRDUDE) $(AVRDUDE_FLAGS) $(AVRDUDE_BFLAG) -U flash:w:$< 
 
 
 # Create final output files (.hex, .eep) from ELF output file.
