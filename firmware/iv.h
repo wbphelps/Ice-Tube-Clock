@@ -1,7 +1,9 @@
 /***************************************************************************
- Ice Tube Clock with GPS firmware April 17, 2011
+ Ice Tube Clock with GPS firmware November 15, 2011
  (c) 2011 William B Phelps
  
+ 17Nov11 - GPS vs Alarm bug
+ 14Nov11 - progressive alarm beeping
  07Nov11 - fix bug, change DST setting to Off, On, Auto
  09May11 - capture & display GPS Lat and Long
  27Apr11 - set DST offset on boot & when rules are changed
@@ -49,8 +51,8 @@ THE SOFTWARE.
 #define FEATURE_WmDST
 #ifdef FEATURE_WmDST
   #define DST_OFF 0
-  #define DST_ON 33  // value chosen to help detect random EE value
-	#define DST_AUTO 66
+	#define DST_ON  1
+  #define DST_AUTO 33  // value chosen to help detect random EE value
 	#define DST_NO  0 
 	#define DST_YES 1  // Clock has been updated for DST Change
 #endif
@@ -90,9 +92,9 @@ THE SOFTWARE.
 #define MAXSNOOZE 600 // 10 minutes
 #define INACTIVITYTIMEOUT 10 // how many seconds we will wait before turning off menus
 
-#define BRIGHTNESS_MAX 90
-#define BRIGHTNESS_MIN 30
-#define BRIGHTNESS_INCREMENT 5
+#define BRITE_MAX 90
+#define BRITE_MIN 30
+#define BRITE_INCREMENT 5
 #define AUTODIM_OFF 0
 #define AUTODIM_ON 1
 #define AUTODIM_MIN 5  // much lower minimum for autodim
@@ -141,6 +143,8 @@ THE SOFTWARE.
 #define EE_DSTOFFSET 29
 
 void delay(uint16_t delay);
+void _delay_ms(uint32_t __ms);
+void _delay_loop_2(uint16_t __count);
 
 void (*app_start)(void) = 0x0000;
 
@@ -171,6 +175,7 @@ void display_dstrule(uint8_t i);
 
 void set_time(void);
 void set_alarm(void);
+void start_alarm(void);
 void set_date(void);
 void show_about(void);
 void set_brightness(void);
@@ -203,13 +208,15 @@ void save_dstrules(uint8_t mods[]);
 #endif
 
 void beep(uint16_t freq, uint8_t times);
+void beep_ms(uint16_t freq, uint8_t times, uint16_t ms);
 void tick(void);
 
 uint8_t leapyear(uint16_t y);
 uint8_t dotw(uint8_t year, uint8_t month, uint8_t day);
 void setalarmstate(void);
 
-void setdisplay(uint8_t digit, uint8_t segments);
+//void setdisplay(uint8_t digit, uint8_t segments);
+void setdisplay(uint8_t digit);
 void vfd_send(uint32_t d);
 void spi_xfer(uint8_t c);
 

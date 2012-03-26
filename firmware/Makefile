@@ -101,9 +101,10 @@ LDFLAGS = -Wl,-Map=$(TARGET).map,--cref
 #AVRDUDE_PROGRAMMER = dt006
 #AVRDUDE_PROGRAMMER = stk500v2
 AVRDUDE_PROGRAMMER = usbtiny
+#AVRDUDE_PROGRAMMER = arduino
 
 
-AVRDUDE_PORT = com1	   # programmer connected to serial device
+AVRDUDE_PORT = COM10	   # programmer connected to serial device
 #AVRDUDE_PORT = /dev/cu.KeySerial1	   # programmer connected to serial device
 #AVRDUDE_PORT = /dev/cu.PL2303-0B2
 #AVRDUDE_PORT = lpt1	# programmer connected to parallel port
@@ -202,14 +203,14 @@ ALL_ASFLAGS = -mmcu=$(MCU) -I. -x assembler-with-cpp $(ASFLAGS)
 all: begin gccversion sizebefore $(TARGET).elf $(TARGET).hex $(TARGET).eep \
 	$(TARGET).lss $(TARGET).sym sizeafter finished end
 
-full: $(TARGET).hex $(TARGET).eep
-	$(AVRDUDE) $(AVRDUDE_FLAGS) -u -U lfuse:w:0xE2:m -u -U hfuse:w:0xc6:m
+full: $(TARGET).hex $(TARGET)eep.hex
+	$(AVRDUDE) $(AVRDUDE_FLAGS) -u -U lfuse:w:0xE2:m -u -U hfuse:w:0xC6:m
 	$(AVRDUDE) $(AVRDUDE_FLAGS) $(AVRDUDE_BFLAG) -U flash:w:$< 
 	$(AVRDUDE) $(AVRDUDE_FLAGS) $(AVRDUDE_BFLAG) -U eeprom:w:iveep.hex
 
 
 burn-fuse: 
-	$(AVRDUDE) $(AVRDUDE_FLAGS) -u -U lfuse:w:0xE2:m -u -U hfuse:w:0xc6:m
+	$(AVRDUDE) $(AVRDUDE_FLAGS) $(AVRDUDE_BFLAG) -u -U lfuse:w:0xE2:m -u -U hfuse:w:0xC6:m 
 
 reset:
 	$(AVRDUDE) $(AVRDUDE_FLAGS) 

@@ -1,7 +1,10 @@
 /***************************************************************************
  Ice Tube Clock with GPS & Auto DST firmware Nov 6, 2011
+ (c) 2009 Limor Fried / Adafruit Industries
  (c) 2011 William B Phelps
- 
+
+ 18Nov11 - progressive alarm feature, alarm startup bug
+ 17Nov11 - GPS vs Alarm bug
  07Nov11 - fix bug, change DST setting to Off, On, Auto
  14May11 - clean up "abrt" vs "adim" - which is better?
  09May11 - capture & display GPS Lat and Long
@@ -44,7 +47,7 @@ THE SOFTWARE.
 #include <avr/io.h>      
 #include <string.h>
 #include <avr/interrupt.h>   // Interrupts and timers
-#include <util/delay.h>      // Blocking delay functions
+//#include <util/delay.h>      // Blocking delay functions
 #include <avr/pgmspace.h>    // So we can store the 'font table' in ROM
 #include <avr/eeprom.h>      // Date/time/pref backup in permanent EEPROM
 #include <avr/wdt.h>     // Watchdog timer to repair lockups
@@ -59,16 +62,16 @@ uint8_t region = REGION_US;
 // These variables store the current time.
 volatile int8_t time_s, time_m, time_h;
 // ... and current date
-volatile uint8_t date_m, date_d, date_y;
+volatile uint8_t date_m=03, date_d=14, date_y = 47;
 
 // how loud is the speaker supposed to be?
 volatile uint8_t volume;
 
-volatile uint8_t bright_level;  // brightness set by user if auto_bright is off
+volatile uint8_t bright_level;  // brightness set by user if autodim is off
 #ifdef FEATURE_AUTODIM
 volatile uint8_t autodim_lo;
 volatile uint8_t autodim_hi;
-volatile uint8_t auto_bright = 0;
+volatile uint8_t autodim = 0;
 #endif
 #ifdef FEATURE_TESTMODE
   #ifdef FEATURE_AUTODIM
@@ -78,6 +81,7 @@ volatile uint8_t auto_bright = 0;
 
 // whether the alarm is on, going off, and alarm time
 volatile uint8_t alarm_on, alarming, alarm_h, alarm_m;
+volatile uint16_t alarm_timer, alarm_count, alarm_cycle, beep_count, beep_cycle;
 
 // what is being displayed on the screen? (eg time, date, menu...)
 volatile uint8_t displaymode;
@@ -85,7 +89,8 @@ volatile uint8_t displaymode;
 // are we in low power sleep mode?
 volatile uint8_t sleepmode = 0;
 
-volatile uint8_t timeunknown = 0;        // MEME
+volatile uint8_t timeknown = 0;        // MEME
+volatile uint8_t dateknown = 0;
 volatile uint8_t restored = 0;
 
 #ifdef FEATURE_WmDST
@@ -93,6 +98,10 @@ volatile uint8_t dst_mode;
 volatile int8_t dst_offset = 0;  // DST adjustment, used by gpssettime
 volatile uint8_t dst_update;  // DST Update allowed now? (Reset at midnight)
 uint8_t dst_rules[9]={3,1,2,2,11,1,1,2,1};   // initial values from US DST rules as of 2011
+// DST Rules: Start(month, dotw, n, hour), End(month, dotw, n, hour), Offset
+// DOTW is Day of the Week, 1=Sunday, 7=Saturday
+// N is which occurrence of DOTW
+// Current US Rules:  March, Sunday, 2nd, 2am, November, Sunday, 1st, 2 am, 1 hour
 const uint8_t dst_rules_lo[]={1,1,1,0,1,1,1,0,0};  // low limit
 const uint8_t dst_rules_hi[]={12,5,7,23,12,5,7,23,1};  // high limit
 static const uint16_t monthDays[]={0,31,59,90,120,151,181,212,243,273,304,334}; // Number of days at the beginning of the month if not leap year
@@ -136,16 +145,17 @@ const uint8_t segmenttable[] PROGMEM = {
 };
 PGM_P segmenttable_p PROGMEM = segmenttable;
 
-// muxdiv and MUX_DIVIDER divides down a high speed interrupt (31.25KHz)
+// muxdiv and MUX_DIVIDER divides down a high speed interrupt (31.25KHz)  
 // down so that we can refresh at about 100Hz (31.25KHz / 300)
 // We refresh the entire display at 100Hz so each digit is updated
 // 100Hz/DISPLAYSIZE
 uint16_t muxdiv = 0;
-#define MUX_DIVIDER (300 / DISPLAYSIZE)
+//#define MUX_DIVIDER (300 / DISPLAYSIZE)  
+#define MUX_DIVIDER (312 / DISPLAYSIZE)  // wbp 
 
 // Likewise divides 100Hz down to 1Hz for the alarm beeping
 uint16_t alarmdiv = 0;
-#define ALARM_DIVIDER 100
+#define ALARM_DIVIDER 90  // set alarm freq to 1/10 second.  alarmdiv is incremented at 900 hz, not 100! (wbp)
 
 // How long we have been snoozing
 uint16_t snoozetimer = 0;
@@ -157,6 +167,39 @@ void delayms(uint16_t ms) {
   sei();
   milliseconds = 0;
   while (milliseconds < ms);
+}
+
+// copy of _delay_ms but with uint instead of double
+void _delay_ms(uint32_t __ms)
+{
+	uint16_t __ticks;
+	uint32_t __tmp = ((F_CPU) / 4000) * __ms;
+	if (__tmp < 1)
+		__ticks = 1;
+	else if (__tmp > 65535)
+	{
+		//	__ticks = requested delay in 1/10 ms
+		__ticks = (uint16_t) (__ms * 10);
+		while(__ticks)
+		{
+			// wait 1/10 ms
+			_delay_loop_2(((F_CPU) / 4000) / 10);
+			__ticks --;
+		}
+		return;
+	}
+	else
+		__ticks = (uint16_t)__tmp;
+	_delay_loop_2(__ticks);
+}
+void _delay_loop_2(uint16_t __count)
+{
+	__asm__ volatile (
+		"1: sbiw %0,1" "\n\t"
+		"brne 1b"
+		: "=w" (__count)
+		: "0" (__count)
+	);
 }
 
 // When the alarm is going off, pressing a button turns on snooze mode
@@ -172,7 +215,7 @@ void setsnooze(void) {
   DEBUGP("snooze");
   display_str("snoozing");
   displaymode = NONE;  // block time display
-  delayms(1000);
+  delayms(1500);
   displaymode = SHOW_TIME;
 }
 
@@ -189,51 +232,72 @@ SIGNAL (SIG_OVERFLOW0) {
   // kick the dog
   kickthedog();
 
-  // divide down to 100Hz * digits
+  // divide down to 100Hz * digits (900 hz)
   muxdiv++;
-  if (muxdiv < MUX_DIVIDER)
+  if (muxdiv < MUX_DIVIDER)  // MUX_DIVIDER = (300/DISPLAYSIZE) = 33
     return;
   muxdiv = 0;
-  // now at 100Hz * digits
+  // now at 100Hz * digits (900hz - wbp)
 
   // ok its not really 1ms but its like within 10% :)
-  milliseconds++;
+  milliseconds++;  // 0.0011111...
 
   // Cycle through each digit in the display
-  if (currdigit >= DISPLAYSIZE)
-    currdigit = 0;
-
   // Set the current display's segments
-  setdisplay(currdigit, display[currdigit]);
+//  setdisplay(currdigit, display[currdigit]);
+  setdisplay(currdigit);
   // and go to the next
   currdigit++;
+//  if (currdigit >= DISPLAYSIZE)
+  if (currdigit > DISPLAYSIZE)  // hack to display last digit twice - wbp
+    currdigit = 0;
 
   // check if we should have the alarm on
   if (alarming && !snoozetimer) {
     alarmdiv++;
-    if (alarmdiv > ALARM_DIVIDER) {
+    if (alarmdiv > ALARM_DIVIDER) {  
       alarmdiv = 0;
     } else {
       return;
     }
-    // This part only gets reached at 1Hz
 
-    // This sets the buzzer frequency
-    ICR1 = 250;
-    OCR1A = OCR1B = ICR1/2;
+// This part only gets reached at 10Hz (wbp)
+		alarm_timer++;  // count how long alarm has been beeping
+//		if (alarm_timer>1800) {  // kill alarm after 3 minutes...  3*60*10=1800 (testing)
+		if (alarm_timer>18000) {  // kill alarm after 30 minutes...  30*60*10=18000 (no body home?)
+			alarming=0;  // turn alarm off
+      snoozetimer = 0;  // kill snooze timer
+			TCCR1B &= ~_BV(CS11); // turn buzzer off
+			PORTB |= _BV(SPK1) | _BV(SPK2);
+		}
 
-    // ok alarm is ringing!
-    if (alarming & 0xF0) { // top bit indicates pulsing alarm state
-      alarming &= ~0xF0;
-      TCCR1B &= ~_BV(CS11); // turn buzzer off!
-    } else {
-      alarming |= 0xF0;
-      TCCR1B |= _BV(CS11); // turn buzzer on!
-    }
-  }
-  
+		// start out by beeping once every 20 seconds
+		// after each cycle, subtract 2 seconds & add 1 beep
+		alarm_count++;
+		if (alarm_count > alarm_cycle) {  // once every alarm_cycle
+			beep_count = alarm_count = 0;  // restart cycle 
+			if (alarm_cycle>20)  // if more than 2 seconds
+				alarm_cycle = alarm_cycle - 20;  // subtract 2 seconds
+			if (beep_cycle<20)
+				beep_cycle += 2;  // add another beep (each beep is two cycles)
+		}
+		beep_count++;
+		if (beep_count <= beep_cycle) {  // how many beeps this cycle?
+			// set the PWM output to match the desired frequency
+			ICR1 = (F_CPU/8)/(428 + (beep_count*12));  // slowly increasing tone ???
+			// we want 50% duty cycle square wave
+			OCR1A = OCR1B = ICR1/2;
+			if (beep_count%2) {  // odd or even? 
+				TCCR1B |= _BV(CS11); // odd, beep on
+			} else {
+				TCCR1B &= ~_BV(CS11);  // even, beep off
+			}
+		}
+		
+	}
+		
 }
-
+  
 
 // We use the pin change interrupts to detect when buttons are pressed
 
@@ -263,10 +327,10 @@ SIGNAL(SIG_PIN_CHANGE2) {
       tick();                         // make a noise
       // check if we will snag this button press for snoozing
       if (alarming) {
-	// turn on snooze
-	setsnooze();
-	PCMSK2 = _BV(PCINT21) | _BV(PCINT20);
-	return;
+				// turn on snooze
+				setsnooze();
+				PCMSK2 = _BV(PCINT21) | _BV(PCINT20);
+				return;
       }
       last_buttonstate |= 0x1;
       just_pressed |= 0x1;
@@ -283,25 +347,26 @@ SIGNAL(SIG_PIN_CHANGE2) {
       if (PIND & _BV(BUTTON3))        // filter out bounces
       {
         PCMSK2 = _BV(PCINT21) | _BV(PCINT20);
-	return;
+				return;
       }
+			tick();  // wbp
       buttonholdcounter = 2;          // see if we're press-and-holding
       while (buttonholdcounter) {
-	if (PIND & _BV(BUTTON3)) {        // released
-	  tick();                         // make a noise
-	  last_buttonstate &= ~0x4;
-	  // check if we will snag this button press for snoozing
-	  if (alarming) {
-	    // turn on snooze
-	    setsnooze();
-	    PCMSK2 = _BV(PCINT21) | _BV(PCINT20);
-	    return;
-	  }
-	  DEBUGP("b3");
-	  just_pressed |= 0x4;
-	  PCMSK2 = _BV(PCINT21) | _BV(PCINT20);
-	  return;
-	}
+				if (PIND & _BV(BUTTON3)) {        // released
+//					tick();                         // make a noise (wrong place - wbp)
+					last_buttonstate &= ~0x4;
+					// check if we will snag this button press for snoozing
+					if (alarming) {
+						// turn on snooze
+						setsnooze();
+						PCMSK2 = _BV(PCINT21) | _BV(PCINT20);
+						return;
+					}
+				DEBUGP("b3");
+				just_pressed |= 0x4;
+				PCMSK2 = _BV(PCINT21) | _BV(PCINT20);
+				return;
+				}
       }
       last_buttonstate |= 0x4;
       pressed |= 0x4;                 // held down
@@ -324,14 +389,14 @@ SIGNAL(SIG_PIN_CHANGE0) {
       if (PINB & _BV(BUTTON2))        // filter out bounces
       {
         PCMSK0 = _BV(PCINT0);
-	return;
+				return;
       }
       tick();                         // make a noise
       // check if we will snag this button press for snoozing
       if (alarming) {
-	setsnooze(); 	// turn on snooze
-	PCMSK0 = _BV(PCINT0);
-	return;
+				setsnooze(); 	// turn on snooze
+				PCMSK0 = _BV(PCINT0);
+				return;
       }
       last_buttonstate |= 0x2;
       just_pressed |= 0x2;
@@ -360,7 +425,7 @@ SIGNAL (TIMER2_OVF_vect) {
     return;
  
   if (displaymode == SHOW_TIME) {
-    if (timeunknown && (time_s % 2)) {
+    if (!timeknown && (time_s % 2)) {  // if time unknown, blink the display
       display_str("        ");
     } else {
       display_time(time_h, time_m, time_s);
@@ -369,10 +434,10 @@ SIGNAL (TIMER2_OVF_vect) {
       display[0] |= 0x2;
     else 
       display[0] &= ~0x2;
-    
   }
 
-  check_alarm(time_h, time_m, time_s);
+	if (timeknown)  // 18nov11/wbp
+		check_alarm(time_h, time_m, time_s);
 
 #ifdef FEATURE_AUTODIM
   dimmer_update();
@@ -388,6 +453,8 @@ SIGNAL (TIMER2_OVF_vect) {
       display[0] |= 0x2;
     else
       display[0] &= ~0x2;
+		if (snoozetimer == 0)  // snooze timer expired?
+			start_alarm();  // start the alarm beeping again
   }
 }
 
@@ -407,19 +474,26 @@ SIGNAL(SIG_INTERRUPT0) {
 }
 
 
-
 SIGNAL(SIG_COMPARATOR) {
   //DEBUGP("COMP");
-  if (ACSR & _BV(ACO)) {
-    //DEBUGP("HIGH");
-    if (!sleepmode) {
+  if (ACSR & _BV(ACO)) {  // If AC power has been removed
+    //DEBUGP("LOW");
+    if (!sleepmode) {  // about to go into sleep mode (why is this not in gotosleep???)
       VFDSWITCH_PORT |= _BV(VFDSWITCH); // turn off display
       VFDCLK_PORT &= ~_BV(VFDCLK) & ~_BV(VFDDATA); // no power to vfdchip
       BOOST_PORT &= ~_BV(BOOST); // pull boost fet low
       SPCR  &= ~_BV(SPE); // turn off spi
-      if (restored) {  // if valid values for time, save in ee
+      if (timeknown) {  // if valid values for time, save in ee  (17nov11/wbp)
+				eeprom_write_byte((uint8_t *)EE_HOUR, time_h);
 				eeprom_write_byte((uint8_t *)EE_MIN, time_m);
 				eeprom_write_byte((uint8_t *)EE_SEC, time_s);
+				beep(2000,1);
+			}
+			if (dateknown) {  // save date if known
+				eeprom_write_byte((uint8_t *)EE_YEAR, date_y);    
+				eeprom_write_byte((uint8_t *)EE_MONTH, date_m);    
+				eeprom_write_byte((uint8_t *)EE_DAY, date_d);    
+				beep(2000,2);
       }
       DEBUGP("z");
       TCCR0B = 0; // no boost
@@ -430,13 +504,13 @@ SIGNAL(SIG_COMPARATOR) {
 #endif
       app_start();
     }
-  } else {
-    //DEBUGP("LOW");
-    if (sleepmode) {
-      if (restored) {
-				eeprom_write_byte((uint8_t *)EE_MIN, time_m);
-				eeprom_write_byte((uint8_t *)EE_SEC, time_s);
-      }
+  } else {  // AC power available
+    //DEBUGP("HIGH");
+    if (sleepmode) {  // were we sleeping?
+//      if (restored) {  // why bother to write values back to ee prom that were just read?????
+//				eeprom_write_byte((uint8_t *)EE_MIN, time_m);
+//				eeprom_write_byte((uint8_t *)EE_SEC, time_s);
+//      }
       DEBUGP("WAKERESET"); 
       app_start();
     }
@@ -464,8 +538,8 @@ void initeeprom(void) {
     eeprom_write_byte((uint8_t*)EE_ZONE_MIN, 0);     //Zone Minute (GPS)
     eeprom_write_byte((uint8_t*)EE_DSTMODE, 0);      //No Daylight Saving Time
     eeprom_write_byte((uint8_t*)EE_GPSENABLE, 0);    //GPS disabled
-    eeprom_write_byte((uint8_t*)EE_AUTODIMLO, BRIGHTNESS_MIN);     //Brightness Level Low = 30
-    eeprom_write_byte((uint8_t*)EE_AUTODIMHI, BRIGHTNESS_MAX);     //Brightness Level High = 90
+    eeprom_write_byte((uint8_t*)EE_AUTODIMLO, BRITE_MIN);     //Brightness Level Low = 30
+    eeprom_write_byte((uint8_t*)EE_AUTODIMHI, BRITE_MAX);     //Brightness Level High = 90
     eeprom_write_byte((uint8_t*)EE_AUTODIM, 0);   //AUTODIM disabled
 
 //uint8_t dst_rules[9]={3,1,2,2,11,1,1,2,1};  
@@ -730,56 +804,6 @@ void gotosleep(void) {
   PORTC &= ~_BV(4);
 }
 
-#if 0 // unused function - no point letting it take up space
- void wakeup(void) {
-   if (!sleepmode)
-     return;
-   CLKPR = _BV(CLKPCE);
-   CLKPR = 0;
-   DEBUGP("waketime");
-   sleepmode = 0;
-   // plugged in
-   // wait to verify
-   _delay_ms(20);
-   if (ACSR & _BV(ACO)) 
-     return;
-   
-   // turn on pullups
-   initbuttons();
-
-#ifdef FEATURE_AUTODIM
-   dimmer_init();
-#endif
-
-   // turn on boost
-//   autodim_lo = eeprom_read_byte((uint8_t *)EE_AUTODIMLO;
-//   autodim_hi = eeprom_read_byte((uint8_t *)EE_AUTODIMHI;
-   bright_level = eeprom_read_byte((uint8_t *)EE_BRIGHT;
-   boost_init(bright_level);
-
-   // turn on vfd control
-   vfd_init();
-
-   // turn on display
-   VFDSWITCH_PORT &= ~_BV(VFDSWITCH); 
-   VFDBLANK_PORT &= ~_BV(VFDBLANK);
-   volume = eeprom_read_byte((uint8_t *)EE_VOLUME); // reset
-   
-   speaker_init();
-
-   kickthedog();
-
-   setalarmstate();
-
-   // wake up sound
-   beep(880, 1);
-   beep(1760, 1);
-   beep(3520, 1);
-
-   kickthedog();
- }
-#endif
-
 
 void initbuttons(void) {
     DDRB =  _BV(VFDCLK) | _BV(VFDDATA) | _BV(SPK1) | _BV(SPK2);
@@ -828,7 +852,7 @@ int main(void) {
 
   // we lost power at some point so lets alert the user
   // that the time may be wrong (the clock still works)
-  timeunknown = 1;
+  dateknown = timeknown = 0;
 	
 #ifdef FEATURE_WmDST
 	dst_update = DST_NO;  // block DST updates until clock init complete
@@ -849,7 +873,7 @@ int main(void) {
   ACSR = _BV(ACBG) | _BV(ACIE); // use bandgap, intr. on toggle!
   _delay_ms(1);
   // settle!
-  if (ACSR & _BV(ACO)) {
+  if (ACSR & _BV(ACO)) {  // low power mode ???
     // hmm we should not interrupt here
     ACSR |= _BV(ACI);
 
@@ -880,8 +904,8 @@ int main(void) {
 		autodim_lo = eeprom_read_byte((uint8_t *)EE_AUTODIMLO);
 		autodim_hi = eeprom_read_byte((uint8_t *)EE_AUTODIMHI);
     bright_level = eeprom_read_byte((uint8_t *)EE_BRIGHT);
-    auto_bright = eeprom_read_byte((uint8_t *)EE_AUTODIM);
-		if (auto_bright == AUTODIM_ON)
+    autodim = eeprom_read_byte((uint8_t *)EE_AUTODIM);
+		if (autodim == AUTODIM_ON)
 			boost_init(autodim_hi);  // make greeting visible
 		else
 			boost_init(bright_level);
@@ -922,13 +946,15 @@ int main(void) {
 
 		displaymode = NONE;  // prevent display update when clock ticks
 
+		display_str("ice tube");  // say hello
+		beep_ms(3520,1,100);
+		_delay_ms(500);  // wait a bit without enabling interrupts  (wbp)
+
     DEBUGP("clock init");
     clock_init();  // restores time & date from ee, enables interrupts
 	
-		display_str("ice tube");  // say hello
-		delayms(1500);  // wait a bit...
     kickthedog();
-    beep(4000, 1);
+    beep_ms(3520,1,100);  // (wbp)
 		display_str("        ");  // clear screen
 		delayms(200);
 		displaymode = SHOW_TIME;
@@ -951,11 +977,14 @@ int main(void) {
 #endif
   }
   DEBUGP("done");
+//
+// --------------------------------------- MENU LOOP -------------------------------------
+//
   while (1) {
     //_delay_ms(100);
     kickthedog();
     //uart_putc_hex(ACSR);
-    if (ACSR & _BV(ACO)) {
+    if (ACSR & _BV(ACO)) {  // low power mode?
       // DEBUGP("SLEEPYTIME");
       gotosleep();
       continue;
@@ -979,11 +1008,12 @@ int main(void) {
       case (SET_TIME):
 				display_str("set time");
 				set_time();
-				timeunknown = 0;
+				timeknown = 1;
 				break;
       case (SET_DATE):
 				display_str("set date");
 				set_date();
+				dateknown = 1;
 				break;
       case (SET_ZONE):
         display_str("set zone");
@@ -1002,7 +1032,7 @@ int main(void) {
       case (SET_BRIGHTNESS):
 				display_str("set brit");
 #ifdef FEATURE_AUTODIM
-				if (auto_bright)
+				if (autodim)
 					set_autobrightness();
 				else
 #endif
@@ -1125,8 +1155,10 @@ void set_alarm(void)
 				display[4] |= 0x1;
 				display[5] |= 0x1;
       }
-      if (pressed & 0x4)
+      if (pressed & 0x4) {
+				tick();  // make a noise (wbp)
 				delayms(75);
+			}
     }
   }
 }
@@ -1148,7 +1180,7 @@ void show_about(void)
     }
     if (just_pressed & 0x2) {
       just_pressed = 0;
-			display_str("111107wm");
+			display_str("111221wm");
 		}
 	}
 }
@@ -1242,8 +1274,10 @@ void set_time(void)
 				time_s = sec;
       }
       
-      if (pressed & 0x4)
+      if (pressed & 0x4) {
+				tick();  // make a noise (wbp)
 				delayms(75);
+			}
 		}
   }
 }
@@ -1300,9 +1334,9 @@ void set_date(void) {
 				setDSToffset(dst_rules);  // Setup Auto DST per current rules
 				dst_update = DST_YES;  // Reset DST Update flag in case time to adjust is soon
 #endif
+				eeprom_write_byte((uint8_t *)EE_YEAR, date_y);    
 				eeprom_write_byte((uint8_t *)EE_MONTH, date_m);    
 				eeprom_write_byte((uint8_t *)EE_DAY, date_d);    
-				eeprom_write_byte((uint8_t *)EE_YEAR, date_y);    
 				return;
 			}
     }
@@ -1345,8 +1379,10 @@ void set_date(void) {
 //				eeprom_write_byte((uint8_t *)EE_YEAR, date_y);    
       }
 
-      if (pressed & 0x4)
+      if (pressed & 0x4) {
+				tick();  // make a noise  (wbp)
 				delayms(60);
+			}
     }
   }
 }
@@ -1435,13 +1471,13 @@ void set_autodim(void) {
       if (mode == SHOW_MENU) {
 				// start!
 				mode = SET_AUTODIM;
-				if(auto_bright == AUTODIM_ON)
+				if(autodim == AUTODIM_ON)
 					display_str("adim on ");
 				else
 					display_str("adim off");
 				}
       else {	
-				eeprom_write_byte((uint8_t *)EE_AUTODIM, auto_bright);
+				eeprom_write_byte((uint8_t *)EE_AUTODIM, autodim);
 				displaymode = SHOW_TIME;
 				return;
 			}
@@ -1449,17 +1485,17 @@ void set_autodim(void) {
     if (just_pressed & 0x4) {
       just_pressed = 0;
       if (mode == SET_AUTODIM) {
-				if (auto_bright == AUTODIM_ON)
+				if (autodim == AUTODIM_ON)
 				{
-					auto_bright = AUTODIM_OFF;
+					autodim = AUTODIM_OFF;
 					display_str("adim off");
 				}
 				else
 				{
-					auto_bright = AUTODIM_ON;
+					autodim = AUTODIM_ON;
 					display_str("adim on ");
 				}
-				eeprom_write_byte((uint8_t *)EE_AUTODIM, auto_bright);
+				eeprom_write_byte((uint8_t *)EE_AUTODIM, autodim);
       }
     }
   }
@@ -1586,9 +1622,9 @@ void set_brightness(void) {
       just_pressed = 0;
       if (mode == SET_BRITE) {
         // Increment brightness level, wrap around at max
-				bright_level += BRIGHTNESS_INCREMENT;
-				if (bright_level > BRIGHTNESS_MAX) {
-					bright_level = BRIGHTNESS_MIN;
+				bright_level += BRITE_INCREMENT;
+				if (bright_level > BRITE_MAX) {
+					bright_level = BRITE_MIN;
 				}
 				display_brightness(bright_level);
       }
@@ -1596,7 +1632,7 @@ void set_brightness(void) {
   }
 }
 
-void set_autobrightness(void) {  // set brightness levels if auto_bright on
+void set_autobrightness(void) {  // set brightness levels if autodim on
   uint8_t mode = SHOW_MENU;
   timeoutcounter = INACTIVITYTIMEOUT;;  
 	autodim_lo = eeprom_read_byte((uint8_t *)EE_AUTODIMLO);
@@ -1634,16 +1670,16 @@ void set_autobrightness(void) {  // set brightness levels if auto_bright on
     if ((just_pressed & 0x4) || (pressed & 0x4)) {  // increment
       just_pressed = 0;
       if (mode == SET_AUTODIMLO) {
-				autodim_lo += BRIGHTNESS_INCREMENT;
-				if (autodim_lo > BRIGHTNESS_MAX) {
+				autodim_lo += BRITE_INCREMENT;
+				if (autodim_lo > BRITE_MAX) {
 					autodim_lo = AUTODIM_MIN;  // start low level really low
 				}
 				display_brightness(autodim_lo);
 				eeprom_write_byte((uint8_t *)EE_AUTODIMLO, autodim_lo);
       } else if (mode == SET_AUTODIMHI) {
-				autodim_hi += BRIGHTNESS_INCREMENT;
-				if (autodim_hi > BRIGHTNESS_MAX) {
-					autodim_hi = BRIGHTNESS_MIN;
+				autodim_hi += BRITE_INCREMENT;
+				if (autodim_hi > BRITE_MAX) {
+					autodim_hi = BRITE_MIN;
 				}
 				display_brightness(autodim_hi);
 				eeprom_write_byte((uint8_t *)EE_AUTODIMHI, autodim_hi);
@@ -1998,10 +2034,16 @@ void clock_init(void) {
   date_y = eeprom_read_byte((uint8_t *)EE_YEAR) % 100;
   date_m = eeprom_read_byte((uint8_t *)EE_MONTH) % 13;
   date_d = eeprom_read_byte((uint8_t *)EE_DAY) % 32;
+	// display restored date (wbp)
+	display_date(DATE);
+	_delay_ms(500);  // wait a bit without unblocking...
 
   time_h = eeprom_read_byte((uint8_t *)EE_HOUR) % 24;
   time_m = eeprom_read_byte((uint8_t *)EE_MIN) % 60;
   time_s = eeprom_read_byte((uint8_t *)EE_SEC) % 60;
+	// display restored time (wbp)
+  display_time(time_h, time_m, time_s);
+	_delay_ms(500);  // wait a bit without unblocking...
 
   /*
     // if you're debugging, having the makefile set the right
@@ -2024,7 +2066,7 @@ void clock_init(void) {
   // We will overflow once a second, and call an interrupt
 
   // enable interrupt
-  TIMSK2 = _BV(TOIE2);
+  TIMSK2 = _BV(TOIE2);  // Enable Timer/Counter2 Overflow Interrupt
 
   // enable all interrupts!
   sei();
@@ -2041,15 +2083,16 @@ void setalarmstate(void) {
       // reset snoozing
       snoozetimer = 0;
       // its not actually SHOW_SNOOZE but just anything but SHOW_TIME
-      if(displaymode == SHOW_TIME) //If we are in test mode, we would mess up
+			// check restored ???
+      if(timeknown && displaymode == SHOW_TIME) //If we are in test mode, we would mess up
       {                           //testing of the display segments.
         // show the status on the VFD tube
         display_str("alarm on");
         displaymode = NONE;  // block time display
-        delayms(1000);
+        delayms(1500);
         // show the current alarm time set
         display_alarm(alarm_h, alarm_m);
-        delayms(1000);
+        delayms(1500);
         // after a second, go back to clock mode
         displaymode = SHOW_TIME;
       }
@@ -2060,12 +2103,12 @@ void setalarmstate(void) {
       alarm_on = 0;
       snoozetimer = 0;
       if (alarming) {
-	// if the alarm is going off, we should turn it off
-	// and quiet the speaker
-	DEBUGP("alarm off");
-	alarming = 0;
-	TCCR1B &= ~_BV(CS11); // turn it off!
-	PORTB |= _BV(SPK1) | _BV(SPK2);
+				// if the alarm is going off, we should turn it off
+				// and quiet the speaker
+				DEBUGP("alarm off");
+				alarming = 0;
+				TCCR1B &= ~_BV(CS11); // turn it off!
+				PORTB |= _BV(SPK1) | _BV(SPK2);
       } 
     }
   }
@@ -2115,24 +2158,27 @@ void tick(void) {
 }
 
 // We can play short beeps!
+// 18nov11/wbp - shorten beep to 100 ms
 void beep(uint16_t freq, uint8_t times) {
+	beep_ms(freq, times, 100);
+}
+void beep_ms(uint16_t freq, uint8_t times, uint16_t ms) {
   // set the PWM output to match the desired frequency
   ICR1 = (F_CPU/8)/freq;
   // we want 50% duty cycle square wave
   OCR1A = OCR1B = ICR1/2;
   while (times--) {
     TCCR1B |= _BV(CS11); // turn it on!
-    // beeps are 200ms long on
-    _delay_ms(200);
+    // beeps are 100ms long on
+    _delay_ms(ms);
     TCCR1B &= ~_BV(CS11); // turn it off!
     PORTB &= ~_BV(SPK1) & ~_BV(SPK2);
-    // beeps are 200ms long off
-    _delay_ms(200);
+    // beeps are 100ms long off
+    _delay_ms(ms);
   }
   // turn speaker off
   PORTB &= ~_BV(SPK1) & ~_BV(SPK2);
 }
-
 
 #ifdef FEATURE_AUTODIM
 /**************************** DIMMER ****************************/
@@ -2142,6 +2188,7 @@ void dimmer_init(void) {
   DIMMER_POWER_PORT |= _BV(DIMMER_POWER_PIN);
 
   ADCSRA |= _BV(ADPS2)| _BV(ADPS1); // Set ADC prescalar to 64 - 125KHz sample rate @ 8MHz F_CPU
+	
   ADMUX |= _BV(REFS0);  // Set ADC reference to AVCC
   ADMUX |= _BV(DIMMER_SENSE_PIN);   // Set ADC input as ADC4 (PC4)
   DIDR0 |= _BV(DIMMER_SENSE_PIND); // Disable the digital imput buffer on the sense pin to save power.
@@ -2151,7 +2198,7 @@ void dimmer_init(void) {
 
 // Start ADC conversion for dimmer
 void dimmer_update(void) {
-  if (auto_bright == AUTODIM_ON) 
+  if (autodim == AUTODIM_ON) 
     ADCSRA |= _BV(ADSC);
 }
 
@@ -2159,7 +2206,7 @@ void dimmer_update(void) {
 SIGNAL(SIG_ADC) {
   uint8_t low, high;
   unsigned int val;
-  if (auto_bright != AUTODIM_ON)
+  if (autodim != AUTODIM_ON)
     return;
   // Read 2-byte value. Must read ADCL first because that locks the value.
   low = ADCL;
@@ -2186,38 +2233,29 @@ SIGNAL(SIG_ADC) {
 // We control the boost converter by changing the PWM output
 // pins
 void boost_init(uint8_t brightness) {
-
   set_vfd_brightness(brightness);
-
   // fast PWM, set OC0A (boost output pin) on match
   TCCR0A = _BV(WGM00) | _BV(WGM01);  
-
   // Use the fastest clock
   TCCR0B = _BV(CS00);
- 
   TCCR0A |= _BV(COM0A1);
   TIMSK0 |= _BV(TOIE0); // turn on the interrupt for muxing
   sei();
 }
 
 void set_vfd_brightness(uint8_t brightness) {
+	if (alarming)  // if alarming, flash display, even if snoozing...
+//		brightness = (time_s % 2) ? BRITE_MIN : BRITE_MAX;
+		brightness = (time_s % 2) ? 50 : BRITE_MAX;  // BRITE_MIN is too dim...
   // Set PWM value, don't set it so high that
   // we could damage the MAX chip or display
-  if (brightness > BRIGHTNESS_MAX)
-    brightness = BRIGHTNESS_MAX;
-
+  if (brightness > BRITE_MAX)
+    brightness = BRITE_MAX;
   // Or so low its not visible
-  if (brightness < BRIGHTNESS_MIN)
-    brightness = BRIGHTNESS_MIN;
-
-  // Round up to the next brightness increment
-  //if (brightness % BRIGHTNESS_INCREMENT != 0) {
-  //  brightness += BRIGHTNESS_INCREMENT - (brightness % BRIGHTNESS_INCREMENT);
-  //}
-
+  if (brightness < BRITE_MIN)
+    brightness = BRITE_MIN;
   if (OCR0A == brightness)
     return;
-
   OCR0A = brightness;
 }
 
@@ -2328,6 +2366,7 @@ void display_date(uint8_t style) {
 
 		// display year
 		display_str(" 2000   ");
+    display[3] = get_number((date_y / 100));  // testing (wbp)
     display[4] = get_number((date_y / 10));
     display[5] = get_number((date_y % 10));
 //    display[8] = display[7] = display[6] = display[5] = 0;
@@ -2450,7 +2489,11 @@ void vfd_init(void) {
 // This changes and updates the display
 // We use the digit/segment table to determine which
 // pins on the MAX6921 to turn on
-void setdisplay(uint8_t digit, uint8_t segments) {
+//void setdisplay(uint8_t digit, uint8_t segments) {  // wbp
+void setdisplay(uint8_t digit) {
+	if (digit == DISPLAYSIZE)
+		digit --;  // hack to display last digit twice
+  uint8_t segments = display[digit];
   uint32_t d = 0;  // we only need 20 bits but 32 will do
   uint8_t i;
 
@@ -2563,9 +2606,9 @@ void getGPSdata(void) {
 				//$GPRMC,225446,A,4916.45,N,12311.12,W,000.5,054.7,191194,020.3,E*68
 				//          1   2    3    4     5    6   7     8      9     10  11 12
         //Parse the buffer here...
-        //Let's test to see if this works:
-        uart_puts("\n\r");
-        uart_puts(gpsBuffer);
+// Let's test to see if this works (putting something out on the serial port):
+//        uart_puts("\n\r");
+//        uart_puts(gpsBuffer);
 
         //Find the first comma:
         strPointer1 = strchr( gpsBuffer, ',');
@@ -2620,47 +2663,34 @@ void getGPSdata(void) {
 
 // set time from gps data gathered previously
 void getGPStime(void) {
-  uint8_t intOldHr = 0;
-  uint8_t intOldMin = 0;
-  uint8_t intOldSec = 0;
 	//The GPS unit will not have the proper date unless it has received a time update.
 	//NOTE: at the turn of the century, the clock will not get updates from GPS
 	//for as many years as the value of PROGRAMMING_YEAR
-	if ( PROGRAMMING_YEAR <= ( ( (gpsDate[4] - '0') * 10 ) ) + (gpsDate[5] - '0') ) {
-		//Get the 'old' values of the time:
-		intOldHr = time_h;
-		intOldMin = time_m;
-		intOldSec = time_s;
+	// check value of restored ???
+	if ( restored && ( PROGRAMMING_YEAR <= ( ( (gpsDate[4] - '0') * 10 ) ) + (gpsDate[5] - '0') ) ) {
+		//Get the 'old' values of the time in minutes:
+		uint16_t oldTime = ((time_h * 60) + time_m);
 		//Change the time:
 		setgpstime(gpsTime);
 		//Change the date:
 		setgpsdate(gpsDate);
 		//Gussy up the time and date, make the numbers come out right:
 		fix_time();
-		//Turn the two time values into minutes past midnight
-		uint16_t timeMinutes = ((time_h * 60) + (time_m));
-		uint16_t oldTimeMinutes = ((intOldHr * 60) + (intOldMin));
-		int8_t intTempHr = time_h;
-		int8_t intTempMin = time_m;
+		//Get the 'new' value of the time and the alarm time in minutes:
+		uint16_t newTime = ((time_h * 60) + time_m);
+		uint16_t timeAlarm = ((alarm_h*60) + alarm_m);
 		//If midnight happened between the old time and the new time
-		//and we did not just go back in time...
-		if ( ( 0 > (int16_t)( timeMinutes - oldTimeMinutes ) )
-				 && ( (timeMinutes + 1440) >= oldTimeMinutes )
-				 && ( abs( timeMinutes + 1440 - oldTimeMinutes ) < abs( timeMinutes - oldTimeMinutes ) ) ) {
-			timeMinutes += 1440;
-			intTempHr += 24;
+		// and we did not just go back in time...
+//		if ( ( 0 > (int16_t)( newTime - oldTime ) ) 
+		if ( ( newTime < oldTime ) 
+				 && ( (newTime + 1440) >= oldTime )
+				 && ( abs( newTime + 1440 - oldTime ) < abs( newTime - oldTime ) ) ) {
+			newTime += 1440;  // just hit midnight, add 1 day to new time for next step
 		}
-		if ( timeMinutes > oldTimeMinutes ) {
-			//Count backwards in time to the old time, checking the alarm for each minute.
-			for ( ; intTempHr >= intOldHr; intTempHr-- ) {
-				for ( ; intTempMin >= 0; intTempMin-- ) {
-					check_alarm( (uint8_t)intTempHr, (uint8_t)intTempMin, 0 );
-				}
-				intTempMin = 59;
-			}
+		if ( (oldTime<timeAlarm) && (newTime>=timeAlarm) && alarm_on ) {
+			start_alarm();  // GPS update skipped the alarm time, start it beeping now...
 		}
 	}
-
 }
 
 //Set the time with a string taken from GPS data:
@@ -2685,6 +2715,7 @@ void setgpstime(char* str) {
   else
     time_m = intTempMin + intTimeZoneMin;
   time_s = intTempSec;
+  timeknown = 1;  // time is now known
 }
 
 //Set the date with a string taken from GPS data:
@@ -2698,20 +2729,28 @@ void setgpsdate(char* str) {
   intTempMon = intTempMon + (str[3] - '0');
   intTempYr = (str[4] - '0') * 10;
   intTempYr = intTempYr + (str[5] - '0');
-  timeunknown = 0;
-  restored = 0;
+//  restored = 0;  // was used to prevent saving time in ee when going to sleep (why???)
   date_d = intTempDay;
   date_m = intTempMon;
   date_y = intTempYr;
+  dateknown = 1;  // date is now known
 }
 
+//Starts the alarm beeping
+void start_alarm()  {
+  DEBUGP("alarm on!");
+  alarming = 1;
+  snoozetimer = 0;
+	alarm_cycle = 200;  // 20 second initial cycle
+	alarm_count = 0;  // reset cycle count
+	beep_cycle = 2;  // start with single beep
+	alarmdiv = alarm_timer = 0;  // start beeping now
+}
 
 //Checks the alarm against the passed time.
 void check_alarm(uint8_t h, uint8_t m, uint8_t s) {
   if (alarm_on && (alarm_h == h) && (alarm_m == m) && (0 == s)) {
-    DEBUGP("alarm on!");
-    alarming = 1;
-    snoozetimer = 0;
+		start_alarm();
   }
 }
 
@@ -2826,8 +2865,8 @@ void fix_time(void) {
   if (date_m < 1) {
     date_m = 12 + date_m;
     date_y--;
-    eeprom_write_byte((uint8_t *)EE_MONTH, date_m);
     eeprom_write_byte((uint8_t *)EE_YEAR, date_y);
+    eeprom_write_byte((uint8_t *)EE_MONTH, date_m);
   }
 
 #ifdef FEATURE_WmDST
@@ -2875,8 +2914,11 @@ long DSTseconds(uint8_t month, uint8_t doftw, uint8_t n, uint8_t hour)
   return yearSeconds(date_y,month,day,hour,0,0);  // seconds til DST event this year
 }
 
-// Current US Rules: 3,1,2,2,  11,1,1,2,  1
+// DST Rules: Start(month, dotw, n, hour), End(month, dotw, n, hour), Offset
 // DOTW is Day of the Week.  1=Sunday, 7=Saturday
+// N is which occurrence of DOTW
+// Current US Rules: March, Sunday, 2nd, 2am, November, Sunday, 1st, 2 am, 1 hour
+// 		3,1,2,2,  11,1,1,2,  1
 void setDSToffset(uint8_t rules[9])
 {
 	uint8_t month1 = rules[0];
