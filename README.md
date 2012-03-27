@@ -17,8 +17,7 @@ DST Rules in Menu (read code before changing!)
 **Changes to Auto Dim feature**  
 lo and hi brightness values in menu  
 use 20k ohm resistor  
-menu option to show ADC and Brightness values  
-press select button to update
+menu option to show ADC and Brightness values (press select button to update display)
 
 **Added Progressive Alarm feature**
 alarm starts out with single beep at long(ish) interval  
