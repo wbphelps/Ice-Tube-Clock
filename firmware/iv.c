@@ -3,6 +3,7 @@
  (c) 2009 Limor Fried / Adafruit Industries
  (c) 2012 William B Phelps
 
+ 05nov12 - fix bugs in Auto DST code
  12oct12 - fix set volume low/high
  06oct12 - fix Auto DST in southern hemisphere
  27sep12 - add support for 9600 bps gps
@@ -79,7 +80,7 @@ THE SOFTWARE.
 static int8_t drift_corr = 0;  /* Drift correction applied each hour */
 #endif
 
-char version[8] = "121012wm";  // program timestamp/version
+char version[8] = "121105wm";  // program timestamp/version
 
 uint8_t region = REGION_US;
 
@@ -160,7 +161,8 @@ uint8_t dst_rules[9]={3,1,2,2,11,1,1,2,1};   // initial values from US DST rules
 // Current US Rules:  March, Sunday, 2nd, 2am, November, Sunday, 1st, 2 am, 1 hour
 const uint8_t dst_rules_lo[]={1,1,1,0,1,1,1,0,0};  // low limit
 const uint8_t dst_rules_hi[]={12,5,7,23,12,5,7,23,1};  // high limit
-static const uint16_t monthDays[]={0,31,59,90,120,151,181,212,243,273,304,334}; // Number of days at the beginning of the month if not leap year
+static const uint8_t mDays[]={31,28,31,30,31,30,31,31,30,31,30,31}; // number of days in each month
+static const uint16_t tmDays[]={0,31,59,90,120,151,181,212,243,273,304,334}; // total number of days by month
 #endif
 
 #ifdef FEATURE_GPS
@@ -2474,10 +2476,10 @@ void set_vfd_brightness(uint8_t brightness) {
   OCR0A = brightness;
 }
 
+// Calculate day of the week - Sunday=1, Saturday=7  (non ISO)
 uint8_t dotw(uint8_t year, uint8_t month, uint8_t day)
 {
   uint16_t m, y;
-	// Calculate day of the week - Sunday=1, Saturday=7  (non ISO)
 	m = month;
 	y = 2000 + year;
   if (m < 3)  {
@@ -3125,22 +3127,21 @@ void fix_time(void) {
 #ifdef FEATURE_WmDST
 long yearSeconds(uint8_t yr, uint8_t mo, uint8_t da, uint8_t h, uint8_t m, uint8_t s)
 {
-  long dn;
-  dn = monthDays[(mo-1)]+da;  // # days so far if not leap year
+  uint16_t dn = tmDays[(mo-1)]+da;  // # days so far if not leap year
   if ((yr % 4 == 0 && yr % 100 != 0) || yr % 400 == 0)  // if leap year
     dn ++;  // add 1 day
-  dn = dn * 86400 + h*3600 + m*60 + s;
+  dn = dn*86400 + (uint16_t)h*3600 + (uint16_t)m*60 + s;
   return dn;
 } 
 
 long DSTseconds(uint8_t month, uint8_t doftw, uint8_t n, uint8_t hour)
 {
-	uint8_t dom = monthDays[month-1];
+	uint16_t dom = mDays[month-1];  // 06nov12/wbp 
 	if ( (date_y%4 == 0) && (month == 2) )
 		dom ++;  // february has 29 days this year
 	uint8_t dow = dotw(date_y, month, 1);  // DOW for 1st day of month for DST event
-	uint8_t day = doftw - dow;  // number of days until 1st dotw in given month
-//	if (day<1)  day += 7;  // make sure it's positive - doesn't work with uint!
+	int8_t day = doftw - dow;  // number of days until 1st dotw in given month
+		if (day<1)  day += 7;  // make sure it's positive
   if (doftw >= dow)
     day = doftw - dow;
   else

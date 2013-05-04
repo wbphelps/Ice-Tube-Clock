@@ -1,8 +1,11 @@
 # **Ice Tube Clock firmware with GPS & working Auto DST support** #
 
-Latest update October 12, 2012 - William Phelps - wm (at) usa.net 
+Latest update November 05, 2012 - William Phelps - wm (at) usa.net 
  
 ## **Includes the following modifications:** ##
+
+**Updates in v121105wm**  
+ 05nov12 - fix bugs in Auto DST code
 
 **Updates in v121012wm**  
  12oct12 - fix set volume low/high  
