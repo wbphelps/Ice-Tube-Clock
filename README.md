@@ -5,7 +5,9 @@ Latest update November 05, 2012 - William Phelps - wm (at) usa.net
 ## **Includes the following modifications:** ##
 
 **Updates in v121105wm**  
- 05nov12 - fix bugs in Auto DST code
+ 05nov12 - fix bugs in Auto DST code  
+ Change Makefile to support atmega328p  
+ **NOTE**: This version will probably not fit on a 168p with all features enabled!
 
 **Updates in v121012wm**  
  12oct12 - fix set volume low/high  
