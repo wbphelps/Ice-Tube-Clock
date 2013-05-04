@@ -1,7 +1,11 @@
 /***************************************************************************
  Ice Tube Clock with GPS firmware November 15, 2011
- (c) 2011 William B Phelps
+ (c) 2012 William B Phelps
  
+ 27sep12 - support GPS 9600 bps
+ 25jul12 - add GPS checksum
+ 25jul12 - stop alarm going off at midnight
+ 26Jan12 - drift_correction wasn't working
  12Jan12 - add ifdef for GPS feature
  27Dec11 - add menu option for last digit brightness boost (ldbb)
  22Dec11 - add Drift Correction feature
@@ -69,9 +73,10 @@ THE SOFTWARE.
 
 #ifdef FEATURE_GPS
 #define GPS_OFF 0
-#define GPS_ON  1
+#define GPS_48  1
+#define GPS_96  2
 // String buffer size:
-#define GPSBUFFERSIZE 128
+#define GPSBUFFERSIZE 100
 #endif
 
 // Allows Testing of the Hardware.  If FEATURE_AUTODIM is enabled, it will

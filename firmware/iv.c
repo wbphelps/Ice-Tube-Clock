@@ -3,6 +3,10 @@
  (c) 2009 Limor Fried / Adafruit Industries
  (c) 2012 William B Phelps
 
+ 12oct12 - fix set volume low/high
+ 06oct12 - fix Auto DST in southern hemisphere
+ 27sep12 - add support for 9600 bps gps
+ 28aug12 - fix check for space in gps buffer (string null term)
  01aug12 - modify to work on atmega328 as well as 168
  30jul12 - rewrite GPS receive logic
  27jul12 - if GPS on & no signal, show message
@@ -75,7 +79,7 @@ THE SOFTWARE.
 static int8_t drift_corr = 0;  /* Drift correction applied each hour */
 #endif
 
-char version[8] = "120801wm";  // program timestamp/version
+char version[8] = "121012wm";  // program timestamp/version
 
 uint8_t region = REGION_US;
 
@@ -286,7 +290,7 @@ void kickthedog(void) {
 
 // called @ (F_CPU/256) = ~30khz (31.25 khz)
 //SIGNAL (SIG_OVERFLOW0) {  // 168 only
-SIGNAL (TIMER0_OVF_vect) {
+SIGNAL (TIMER0_OVF_vect) {  // 328p & 168
   // allow other interrupts to go off while we're doing display updates
   sei();
 
@@ -320,6 +324,7 @@ SIGNAL (TIMER0_OVF_vect) {
     currdigit = 0;  // start over with first digit
 #endif
 
+#ifdef FEATURE_SECSMODE
 	if (secsmode == 4 && displaymode == SHOW_TIME)  {
 		secsdiv++;
 		if (secsdiv > SECS_DIVIDER) {
@@ -329,6 +334,7 @@ SIGNAL (TIMER0_OVF_vect) {
 			display[8] = pgm_read_byte(dialsegs4_p + ss);
 		}
 	}
+#endif
 
   // check if we should have the alarm on
   if (alarming && !snoozetimer) {
@@ -384,7 +390,7 @@ volatile uint8_t buttonholdcounter = 0;
 
 // This interrupt detects switches 1 and 3
 //SIGNAL(SIG_PIN_CHANGE2) {  // 168 only
-SIGNAL(PCINT2_vect) {
+SIGNAL(PCINT2_vect) {  // 328p & 168
   // allow interrupts while we're doing this
   PCMSK2 = 0;
   sei();
@@ -456,7 +462,7 @@ SIGNAL(PCINT2_vect) {
 
 // Just button #2
 //SIGNAL(SIG_PIN_CHANGE0) {  // 168 only
-SIGNAL(PCINT0_vect) {
+SIGNAL(PCINT0_vect) {  // 328p & 168
   PCMSK0 = 0;
   sei();
   if (! (PINB & _BV(BUTTON2))) {
@@ -565,7 +571,7 @@ SIGNAL (TIMER2_OVF_vect) {
 }
 
 //SIGNAL(SIG_INTERRUPT0) {  // 168 only
-SIGNAL(INT0_vect) {
+SIGNAL(INT0_vect) {  // 328p & 168
   EIMSK = 0;  //Disable this interrupt while we are processing it.
   uart_putchar('i');
   uint8_t x = ALARM_PIN & _BV(ALARM);
@@ -582,7 +588,7 @@ SIGNAL(INT0_vect) {
 
 
 //SIGNAL(SIG_COMPARATOR) {  // 168 only
-SIGNAL(ANALOG_COMP_vect) {
+SIGNAL(ANALOG_COMP_vect) {  // 328p & 168
   //DEBUGP("COMP");
   if (ACSR & _BV(ACO)) {  // If AC power has been removed
     //DEBUGP("LOW");
@@ -858,8 +864,14 @@ int main(void) {
 #endif
 #ifdef FEATURE_GPS
     gpsEnabled = eeprom_read_byte((uint8_t *)EE_GPSENABLE);
+		if (gpsEnabled == GPS_48)
+		  uart_init(BRRL_4800);
+		else if (gpsEnabled == GPS_96)
+		  uart_init(BRRL_9600);
 #endif
+#ifdef FEATURE_SECSMODE
     secsmode = eeprom_read_byte((uint8_t *)EE_SECSMODE);
+#endif
 #ifdef FEATURE_LDBB
     ldbb = eeprom_read_byte((uint8_t *)EE_LDBB);
 		if (ldbb > 1)
@@ -1025,9 +1037,9 @@ int main(void) {
     } 
 #ifdef FEATURE_GPS
     //Check to see if GPS data is ready:
-		if (gpsEnabled == GPS_ON)
+		if (gpsEnabled > GPS_OFF)
 		{
-//			if ( gpsDataReady() )   // if there is data in the buffer
+			if ( gpsDataReady() )   // if there is data in the buffer
 			getGPSdata();  // get the GPS serial stream and update the clock 
 		}
 #endif
@@ -1449,8 +1461,10 @@ void set_ldbb(void) {
 
 #ifdef FEATURE_GPS
 void show_gpsenabled(void) {
-	if(gpsEnabled == GPS_ON)
-		display_str("gps on  ");
+	if (gpsEnabled == GPS_48)
+		display_str("gps on48");
+	else if (gpsEnabled == GPS_96)
+		display_str("gps on96");
 	else
 		display_str("gps off ");
 }
@@ -1496,10 +1510,16 @@ void set_gpsenable(void) {
     if (just_pressed & 0x4) { // increment
       just_pressed = 0;
       if (mode == SET_GPS) {
-				if (gpsEnabled == GPS_ON)
-					gpsEnabled = GPS_OFF;
+				if (gpsEnabled == GPS_OFF) {
+					gpsEnabled = GPS_48;
+					uart_init(BRRL_4800);
+					}
+				else if (gpsEnabled == GPS_48) {
+					gpsEnabled = GPS_96;
+					uart_init(BRRL_9600);
+					}
 				else
-					gpsEnabled = GPS_ON;
+					gpsEnabled = GPS_OFF;
 				show_gpsenabled();
 				eeprom_write_byte((uint8_t *)EE_GPSENABLE, gpsEnabled);
       }
@@ -1946,10 +1966,10 @@ void set_volume(void) {
       just_pressed = 0;
       if (mode == SET_VOL) {
 				volume = !volume;
-				show_volume();
 				eeprom_write_byte((uint8_t *)EE_VOLUME, volume);
 				speaker_init();
 				beep(4000, 1);
+				show_volume();
 			}
     }
   }
@@ -2342,7 +2362,11 @@ void tick(void) {
   delayms(10);
   // turn them both off
   SPK_PORT &= ~_BV(SPK1) & ~_BV(SPK2);
-  TCCR1A = _BV(COM1A1) | _BV(COM1B1) | _BV(COM1B0) | _BV(WGM11);
+	// restore volume setting - 12oct12/wbp
+  TCCR1A = _BV(COM1B1) | _BV(COM1B0) | _BV(WGM11);
+  if (volume) {  // 12oct12/wbp
+    TCCR1A |= _BV(COM1A1);
+  } 
   TCCR1B = _BV(WGM13) | _BV(WGM12);
 }
 
@@ -2393,7 +2417,7 @@ void dimmer_update(void) {
 
 // Update brightness once ADC measurement completes
 //SIGNAL(SIG_ADC) {  // 168 only
-SIGNAL(ADC_vect) {
+SIGNAL(ADC_vect) {  // 328p & 168
   uint8_t low, high;
   unsigned int val;
   if (autodim != AUTODIM_ON)
@@ -2574,8 +2598,9 @@ void display_date(uint8_t style) {
 // This displays a time on the clock
 void display_time(uint8_t h, uint8_t m, uint8_t s) {
 
+#ifdef FEATURE_SECSMODE
+	if (displaymode == SHOW_TIME)  {  // secsmode only active if displaymode is SHOW_TIME
 	uint16_t ss;
-	if (displaymode == SHOW_TIME)  {
 	 switch (secsmode)  {
 		case 0:  // secs
 			display_num(7, s, 0);
@@ -2622,6 +2647,7 @@ void display_time(uint8_t h, uint8_t m, uint8_t s) {
 		}
 	 }
 	else
+#endif
 	 display_num(7, s, 0);
 	
   display[6] = 0;  // blank
@@ -2636,13 +2662,12 @@ void display_time(uint8_t h, uint8_t m, uint8_t s) {
     } else {
       display[1] =  get_number(1);
     }
-
     // We use the '*' as an am/pm notice
     if (h >= 12)
       display[0] |= 0x1;  // 'pm' notice
     else 
       display[0] &= ~0x1;  // 'pm' notice
-  } else {
+  } else {  // 24 hour time
 //    display[2] =  get_number(( (h%24) % 10));
 //    display[1] =  get_number(( (h%24) / 10));
 		display_num(1, h, 0);
@@ -2779,9 +2804,9 @@ void spi_xfer(uint8_t c) {
 //GPS serial data handling functions:
 
 //Check to see if there is any serial data.
-//uint8_t gpsDataReady(void) {
-//  return (UCSR0A & _BV(RXC0));
-//}
+uint8_t gpsDataReady(void) {
+  return (UCSR0A & _BV(RXC0));
+}
 
 // get data from gps and update the clock (if possible)
 //$GPRMC,225446,A,4916.45,N,12311.12,W,000.5,054.7,191194,020.3,E*68\r\n
@@ -2792,14 +2817,12 @@ void getGPSdata(void) {
 //  uint8_t intOldHr = 0;
 //  uint8_t intOldMin = 0;
 //  uint8_t intOldSec = 0;
-	if (!(UCSR0A & _BV(RXC0)))  // anything on the serial port?
-		return;  // no, all done
   char charReceived = UDR0;  // get a byte from the port
 	uint8_t bufflen = strlen(gpsBuffer);
   //If the buffer has not been started, check for '$'
   if ( ( bufflen == 0 ) &&  ( '$' != charReceived ) )
 		return;  // wait for start of next sentence from GPS
-	if ( bufflen < GPSBUFFERSIZE ) {  // is there room left?
+	if ( bufflen < (GPSBUFFERSIZE - 1) ) {  // is there room left? (allow room for null term)
 		if ( '\r' != charReceived ) {  // end of sentence?
 			strncat(gpsBuffer, &charReceived, 1);  // add char to buffer
 			return;
@@ -3128,6 +3151,19 @@ long DSTseconds(uint8_t month, uint8_t doftw, uint8_t n, uint8_t hour)
   return yearSeconds(date_y,month,day,hour,0,0);  // seconds til DST event this year
 }
 
+// adjust dst offset and save values in ee prom
+void adjDSToffset(uint8_t offset)
+{
+	int8_t adj = offset - dst_offset;
+	if ((dst_offset != offset) && (dst_update == DST_YES)) {
+		dst_offset = offset;
+		time_h += adj;  // if this is the first time, bump the hour
+		eeprom_write_byte((uint8_t *)EE_DSTOFFSET, offset);  // remember setting for power up
+		eeprom_write_byte((uint8_t *)EE_HOUR, time_h);    
+		dst_update = DST_NO;  // OK, it's done, don't do it again today
+	}
+}
+
 // DST Rules: Start(month, dotw, n, hour), End(month, dotw, n, hour), Offset
 // DOTW is Day of the Week.  1=Sunday, 7=Saturday
 // N is which occurrence of DOTW
@@ -3148,25 +3184,17 @@ void setDSToffset(uint8_t rules[9])
   long seconds1 = DSTseconds(month1,dotw1, n1, hour1);  // seconds til start of DST this year
   long seconds2 = DSTseconds(month2,dotw2, n2, hour2);  // seconds til end of DST this year
   long seconds_now = yearSeconds(date_y, date_m, date_d, time_h, time_m, time_s);
-	if ((seconds_now >= seconds1) && (seconds_now < seconds2))
-	{  // spring ahead
-		if ((dst_offset == 0) && (dst_update == DST_YES)) {
-			dst_update = DST_NO;  // Only do this once per day
-			dst_offset = offset;
-			time_h += offset;  // if this is the first time, bump the hour
-			eeprom_write_byte((uint8_t *)EE_DSTOFFSET, offset);  // remember setting for power up
-			eeprom_write_byte((uint8_t *)EE_HOUR, time_h);    
-		}
+	if (seconds2>seconds1) {  // northern hemisphere
+		if ((seconds_now >= seconds1) && (seconds_now < seconds2))  // spring ahead
+			adjDSToffset(offset);
+		else  // fall back
+			adjDSToffset(0);
 	}
-	else
-	{  // fall back
-		if ((dst_offset >0) && (dst_update == DST_YES)) {
-			dst_update = DST_NO;  // Only do this once per day
-			dst_offset = 0;
-			time_h -= offset;  // if this is the first time, bump the hour
-			eeprom_write_byte((uint8_t *)EE_DSTOFFSET, offset);  // remember setting for power up
-			eeprom_write_byte((uint8_t *)EE_HOUR, time_h);    
-		}
+	else {  // southern hemisphere
+		if ((seconds_now >= seconds2) || (seconds_now < seconds1))  // fall ahead
+			adjDSToffset(offset);
+		else  // spring back
+			adjDSToffset(0);
 	}
 }
 #endif
