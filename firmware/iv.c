@@ -3,6 +3,10 @@
  (c) 2009 Limor Fried / Adafruit Industries
  (c) 2012 William B Phelps
 
+ 30jul12 - rewrite GPS receive logic
+ 27jul12 - if GPS on & no signal, show message
+ 25jul12 - add GPS checksum check!
+ 25jul12 - stop alarm going off at midnight
  26Jan12 - drift_correction wasn't working
  12Jan12 - ifdef for GPS support, show adc level
  06Jan12 - seconds dial mode
@@ -67,7 +71,7 @@ THE SOFTWARE.
 static int8_t drift_corr = 0;  /* Drift correction applied each hour */
 #endif
 
-char version[8] = "120321wm";  // program timestamp/version
+char version[8] = "120730wm";  // program timestamp/version
 
 uint8_t region = REGION_US;
 
@@ -154,8 +158,9 @@ static const uint16_t monthDays[]={0,31,59,90,120,151,181,212,243,273,304,334}; 
 #ifdef FEATURE_GPS
 // String buffer for processing GPS data:
 char gpsBuffer[GPSBUFFERSIZE];
-uint8_t gpsBufferStatus = 0;
-volatile uint8_t gps_enabled = 0;
+volatile uint8_t gpsEnabled = 0;
+#define gpsTimeoutLimit 5  // 5 seconds until we display the "no gps" message
+uint16_t gpsTimeout = 0;  // how long since we received valid GPS data?
 char gpsTime[7];
 char gpsDate[7];
 char gpsFixStat[1];  // fix status
@@ -163,7 +168,8 @@ char gpsLat[6];  // ddmmff  (without decimal point)
 char gpsLatH[1];  // hemisphere 
 char gpsLong[7];  // ddddmmff  (without decimal point)
 char gpsLongH[1];  // hemisphere 
-//uint8_t gpsTimeReady = 0;
+char *gpsPtr;
+char gpsCheck1, gpsCheck2;
 #endif
 
 // Variables for the timezone offset if using GPS.
@@ -512,10 +518,14 @@ SIGNAL (TIMER2_OVF_vect) {
   // If we're in low power mode we should get out now since the display is off
   if (sleepmode)
     return;
- 
+	if (gpsTimeout < gpsTimeoutLimit)
+		gpsTimeout++;  // 1 second has gone by
+	
   if (displaymode == SHOW_TIME) {
     if (!timeknown && (time_s % 2)) {  // if time unknown, blink the display
       display_str("        ");
+    } else if ( gpsEnabled && (gpsTimeout>=gpsTimeoutLimit) && (time_s % 2) ) {  // if no data from gps
+      display_str(" no gps ");
     } else {
       display_time(time_h, time_m, time_s);
     }
@@ -838,7 +848,7 @@ int main(void) {
 		}
 #endif
 #ifdef FEATURE_GPS
-    gps_enabled = eeprom_read_byte((uint8_t *)EE_GPSENABLE);
+    gpsEnabled = eeprom_read_byte((uint8_t *)EE_GPSENABLE);
 #endif
     secsmode = eeprom_read_byte((uint8_t *)EE_SECSMODE);
 #ifdef FEATURE_LDBB
@@ -1006,7 +1016,7 @@ int main(void) {
     } 
 #ifdef FEATURE_GPS
     //Check to see if GPS data is ready:
-		if (gps_enabled == GPS_ON)
+		if (gpsEnabled == GPS_ON)
 		{
 			if ( gpsDataReady() )   // if there is data in the buffer
 				getGPSdata();  // get the GPS serial stream and update the clock 
@@ -1430,7 +1440,7 @@ void set_ldbb(void) {
 
 #ifdef FEATURE_GPS
 void show_gpsenabled(void) {
-	if(gps_enabled == GPS_ON)
+	if(gpsEnabled == GPS_ON)
 		display_str("gps on  ");
 	else
 		display_str("gps off ");
@@ -1477,12 +1487,12 @@ void set_gpsenable(void) {
     if (just_pressed & 0x4) { // increment
       just_pressed = 0;
       if (mode == SET_GPS) {
-				if (gps_enabled == GPS_ON)
-					gps_enabled = GPS_OFF;
+				if (gpsEnabled == GPS_ON)
+					gpsEnabled = GPS_OFF;
 				else
-					gps_enabled = GPS_ON;
+					gpsEnabled = GPS_ON;
 				show_gpsenabled();
-				eeprom_write_byte((uint8_t *)EE_GPSENABLE, gps_enabled);
+				eeprom_write_byte((uint8_t *)EE_GPSENABLE, gpsEnabled);
       }
     }
   }
@@ -1606,6 +1616,8 @@ void set_autodim(void) {
 				dimmer_update();  // start ADC 
 				display_value(1, 4, dimmer_adc);
 				display_value(6, 3, dimmer_lvl);
+//				display_value(1, 3, gpsCheck1);
+//				display_value(4, 5, gpsCheck2);
 			} else {	
 				eeprom_write_byte((uint8_t *)EE_AUTODIM, autodim);
 				displaymode = SHOW_TIME;
@@ -2762,123 +2774,83 @@ uint8_t gpsDataReady(void) {
 }
 
 // get data from gps and update the clock (if possible)
+//$GPRMC,225446,A,4916.45,N,12311.12,W,000.5,054.7,191194,020.3,E*68\r\n
+// 0         1         2         3         4         5         6         7
+// 01234567890123456789012345678901234567890123456789012345678901234567890
+//    0     1   2    3    4     5    6   7     8      9     10  11 12
 void getGPSdata(void) {
 //  uint8_t intOldHr = 0;
 //  uint8_t intOldMin = 0;
 //  uint8_t intOldSec = 0;
+	uint8_t bufflen = strlen(gpsBuffer);
   char charReceived = UDR0;
-  char *strPointer1;
-//  char strTime[7];
-//  char strDate[7];
-  
-  //If the buffer has not been started because a '$' has not been encountered
-  //but a '$' is just now encountered, then start filling the buffer.
-  if ( ( 0 == gpsBufferStatus ) && ( '$' == charReceived ) ) {
-    gpsBufferStatus = 1;
-    strncat(gpsBuffer, &charReceived, 1);
-    return;
-  }
-
-  //If the buffer has started to fill...
-  if ( 0 != gpsBufferStatus ) {
-    //If for some reason, the buffer is full, clear it, and start over.
-    if ( ! ( ( strlen(gpsBuffer) < GPSBUFFERSIZE ) ) ) {
-      memset( gpsBuffer, 0, GPSBUFFERSIZE );
-      gpsBufferStatus = 0;
-      return;
-    }
-    //If the buffer has 6 characters in it, it is time to check to see if it is 
-    //the line we are looking for that starts with "$GPRMC"
-    else if ( 6 == strlen(gpsBuffer) ) {
-      //If the buffer does contain the characters we are looking for,
-      //then update the status, add to the buffer, and then return for more.
-      if ( 0 == strcmp( gpsBuffer, "$GPRMC" ) ) {
-        //uart_puts("\n\r$GPRMC Found \n\r");
-        gpsBufferStatus = 2;
-        strncat(gpsBuffer, &charReceived, 1);
-        return;
-      }
-      //If the buffer does not contain the characters we are looking for,
-      //then clear the buffer and start over..
-      else {
-        //uart_puts("\n\r$GPRMC Not Found:\t\t");
-        //uart_puts(gpsBuffer);
-        memset( gpsBuffer, 0, GPSBUFFERSIZE );
-        gpsBufferStatus = 0;
-        return;
-      }
-    }
-
-    //If the asterix at the start of the checksum at the end of the line is encountered,
-    //then parse the buffer.
-    else if ( '*' == charReceived ) {
-      //If the buffer status indicates we have not already found the
-      //needed start of the string, then start over.
-      if ( 2 != gpsBufferStatus ) {
-        memset( gpsBuffer, 0, GPSBUFFERSIZE );
-        gpsBufferStatus = 0;
-        return;
-      }
-      //If the buffer status indicates we have already found the needed start of the string,
-      //then go on to parse the buffer.
-      else {
-				//$GPRMC,225446,A,4916.45,N,12311.12,W,000.5,054.7,191194,020.3,E*68
-				//          1   2    3    4     5    6   7     8      9     10  11 12
-        //Parse the buffer here...
-// Let's test to see if this works (putting something out on the serial port):
-//        uart_puts("\n\r");
-//        uart_puts(gpsBuffer);
-
-        //Find the first comma:
-        strPointer1 = strchr( gpsBuffer, ',');
-
-        //Copy the section of memory in the buffer that contains the time.
-        memcpy( gpsTime, strPointer1 + 1, 6 );
-        gpsTime[6] = 0;  //add a null character to the end of the time string.
-
-				strPointer1 = strchr( strPointer1 + 1, ',');  // find the next comma
-				memcpy( gpsFixStat, strPointer1 + 1, 1 );  // copy fix status
-
-				strPointer1 = strchr( strPointer1 + 1, ',');  // find the next comma
-				memcpy( gpsLat, strPointer1 + 1, 4 );  // copy Latitude ddmm
-				memcpy( gpsLat + 4, strPointer1 + 6, 2 );  // copy Latitude ff
-
-				strPointer1 = strchr( strPointer1 + 1, ',');  // find the next comma
-				memcpy( gpsLatH, strPointer1 + 1, 1 );  // copy Latitude Hemisphere
-
-				strPointer1 = strchr( strPointer1 + 1, ',');  // find the next comma
-				memcpy( gpsLong, strPointer1 + 1 , 5 );  // copy Longitude dddmm
-				memcpy( gpsLong + 5, strPointer1 + 7 , 2 );  // copy Longitude ff
-
-				strPointer1 = strchr( strPointer1 + 1, ',');  // find the next comma
-				memcpy( gpsLongH, strPointer1 + 1 ,1 );  // copy Longitude Hemisphere
-
-        //Find three more commas to get the date:
-        for ( int i = 0; i < 3; i++ ) {
-          strPointer1 = strchr( strPointer1 + 1, ',');
-        }
-
-        //Copy the section of memory in the buffer that contains the date.
-        memcpy( gpsDate, strPointer1 + 1, 6 );
-        //add a null character to the end of the date string.
-        gpsDate[6] = 0;
-				
-				getGPStime();  // data is ready, update the clock
-
-        //We've done what we needed to do, so start over.
-        memset( gpsBuffer, 0, GPSBUFFERSIZE );
-        gpsBufferStatus = 0;
-        return;
-      }
-    }
-    //If nothing else was found, add to the buffer.
-    else {
-      strncat(gpsBuffer, &charReceived, 1);
-    }
-
-  }
-
-}
+  //If the buffer has not been started, check for '$'
+  if ( ( bufflen == 0 ) &&  ( '$' != charReceived ) )
+		return;  // wait for start of next sentence from GPS
+	if ( bufflen < GPSBUFFERSIZE ) {  // is there room left?
+		if ( '\r' != charReceived ) {  // end of sentence?
+			strncat(gpsBuffer, &charReceived, 1);  // add char to buffer
+			return;
+		}
+		// end of sentence - is this the message we are looking for?
+		if ( strncmp( gpsBuffer, "$GPRMC,", 7 ) == 0 ) {  
+			//Calculate checksum from the received data
+			gpsPtr = &gpsBuffer[1];  // start at the "G"
+			gpsCheck1 = 0;  // init collector
+			 /* Loop through entire string, XORing each character to the next */
+			while (*gpsPtr != '*')  // count all the bytes up to the asterisk
+			{
+				gpsCheck1 ^= *gpsPtr;
+				gpsPtr++;
+			}
+			// now get the checksum from the string itself, which is in hex
+			uint8_t chk1, chk2;
+			chk1 = *(gpsPtr+1);
+			chk2 = *(gpsPtr+2);
+			if (chk1 > '9') 
+				chk1 = chk1 - 55;  // convert 'A-F' to 10-15
+			else
+				chk1 = chk1 - 48;  // convert '0-9' to 0-9
+			if (chk2 > '9') 
+				chk2 = chk2 - 55;  // convert 'A-F' to 10-15
+			else
+				chk2 = chk2 - 48;  // convert '0-9' to 0-9
+			gpsCheck2 = (chk1 * 16)  + chk2;
+			if (gpsCheck1 == gpsCheck2) {  // if checksums match, process the data
+				//Find the first comma:
+				gpsPtr = strchr( gpsBuffer, ',');
+				//Copy the section of memory in the buffer that contains the time.
+				memcpy( gpsTime, gpsPtr + 1, 6 );
+				gpsTime[6] = 0;  //add a null character to the end of the time string.
+				gpsPtr = strchr( gpsPtr + 1, ',');  // find the next comma
+				memcpy( gpsFixStat, gpsPtr + 1, 1 );  // copy fix status
+				if (gpsFixStat[0] == 'A') {  // if data valid, update time & date
+					gpsTimeout = 0;  // reset gps timeout counter
+					gpsPtr = strchr( gpsPtr + 1, ',');  // find the next comma
+					memcpy( gpsLat, gpsPtr + 1, 4 );  // copy Latitude ddmm
+					memcpy( gpsLat + 4, gpsPtr + 6, 2 );  // copy Latitude ff
+					gpsPtr = strchr( gpsPtr + 1, ',');  // find the next comma
+					memcpy( gpsLatH, gpsPtr + 1, 1 );  // copy Latitude Hemisphere
+					gpsPtr = strchr( gpsPtr + 1, ',');  // find the next comma
+					memcpy( gpsLong, gpsPtr + 1 , 5 );  // copy Longitude dddmm
+					memcpy( gpsLong + 5, gpsPtr + 7 , 2 );  // copy Longitude ff
+					gpsPtr = strchr( gpsPtr + 1, ',');  // find the next comma
+					memcpy( gpsLongH, gpsPtr + 1 ,1 );  // copy Longitude Hemisphere
+					//Find three more commas to get the date:
+					for ( int i = 0; i < 3; i++ ) {
+						gpsPtr = strchr( gpsPtr + 1, ',');
+					}
+					//Copy the section of memory in the buffer that contains the date.
+					memcpy( gpsDate, gpsPtr + 1, 6 );
+					gpsDate[6] = 0;  //add a null character to the end of the date string.
+					getGPStime();  // data is ready, update the clock
+				}
+			}
+		}  // if "$GPRMC"
+	}  // if space left in buffer
+	// either buffer is full, or the message has been processed. reset buffer for next message
+	memset( gpsBuffer, 0, GPSBUFFERSIZE );
+}  // getGPSdata
 
 // set time from gps data gathered previously
 void getGPStime(void) {
@@ -2888,28 +2860,32 @@ void getGPStime(void) {
 	// check value of restored ???
 	if ( restored && ( PROGRAMMING_YEAR <= ( ( (gpsDate[4] - '0') * 10 ) ) + (gpsDate[5] - '0') ) ) {
 		//Get the 'old' values of the time in minutes:
-		uint16_t oldTime = ((time_h * 60) + time_m);
+//		uint16_t oldTime = ((time_h * 60) + time_m);
 		//Change the time:
 		setgpstime(gpsTime);
 		//Change the date:
 		setgpsdate(gpsDate);
 		//Gussy up the time and date, make the numbers come out right:
 		fix_time();
-		//Get the 'new' value of the time and the alarm time in minutes:
-		uint16_t newTime = ((time_h * 60) + time_m);
-		uint16_t timeAlarm = ((alarm_h*60) + alarm_m);
-		//If midnight happened between the old time and the new time
-		// and we did not just go back in time...
-//		if ( ( 0 > (int16_t)( newTime - oldTime ) ) 
-		if ( ( newTime < oldTime ) 
-				 && ( (newTime + 1440) >= oldTime )
-				 && ( abs( newTime + 1440 - oldTime ) < abs( newTime - oldTime ) ) ) {
-			newTime += 1440;  // just hit midnight, add 1 day to new time for next step
-		}
-		if ( (oldTime<timeAlarm) && (newTime>=timeAlarm) && alarm_on ) {
-			start_alarm();  // GPS update skipped the alarm time, start it beeping now...
-		}
-	}
+		
+// //Get the 'new' value of the time and the alarm time in minutes:
+// // this code is broken - it causes alarm at midnight
+// uint16_t newTime = ((time_h * 60) + time_m);
+// uint16_t timeAlarm = ((alarm_h*60) + alarm_m);
+// //If midnight happened between the old time and the new time
+// // and we did not just go back in time...
+// //		if ( ( 0 > (int16_t)( newTime - oldTime ) ) 
+// if ( ( newTime < oldTime ) 
+		 // && ( (newTime + 1440) >= oldTime )
+		 // && ( abs( newTime + 1440 - oldTime ) < abs( newTime - oldTime ) ) ) {
+	// newTime += 1440;  // just hit midnight, add 1 day to new time for next step
+// }
+// if ( (oldTime<timeAlarm) && (newTime>=timeAlarm) && alarm_on ) {
+	// start_alarm();  // GPS update skipped the alarm time, start it beeping now...
+// }
+
+ }
+	
 }
 
 //Set the time with a string taken from GPS data:
@@ -3001,7 +2977,7 @@ void fix_time(void) {
   }
 
 #ifdef FEATURE_GPS
-	if ((time_s == 0) && (time_m == 0) && (gps_enabled == GPS_OFF))  {  // on the hour?
+	if ((time_s == 0) && (time_m == 0) && (gpsEnabled == GPS_OFF))  {  // on the hour?
 #else
 	if ((time_s == 0) && (time_m == 0))  {  // on the hour?
 #endif
