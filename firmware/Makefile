@@ -1,6 +1,14 @@
-# MCU name
-MCU = atmega168
+# 31jul12/wbp - mod for atmel 328p
+# MCU name & fuse settings
+#MCU = atmega168
+#FUSES = -u -U lfuse:w:0xE2:m -u -U hfuse:w:0xC6:m
+#note: efuse is default so no change
+MCU = atmega328p
+FUSES = -u -U lfuse:w:0xE2:m -u -U hfuse:w:0xC1:m -u -U efuse:w:0x06:m
+#note: efuse is really 0xFE but avrdude will not allow bits to be set that cannot be changed...
+
 F_CPU = 8000000
+# MCU runs off its internal 8 MHz oscillator, NOT the external crystal!
 
 # Output format. (can be srec, ihex, binary)
 FORMAT = ihex 
@@ -196,13 +204,12 @@ ALL_CFLAGS = -mmcu=$(MCU) -I. $(CFLAGS)
 ALL_ASFLAGS = -mmcu=$(MCU) -I. -x assembler-with-cpp $(ASFLAGS)
 
 
-
 # Default target.
 all: begin gccversion sizebefore $(TARGET).elf $(TARGET).hex $(TARGET).eep \
 	$(TARGET).lss $(TARGET).sym sizeafter finished end
 
 full: $(TARGET).hex $(TARGET).eep
-	$(AVRDUDE) $(AVRDUDE_FLAGS) -u -U lfuse:w:0xE2:m -u -U hfuse:w:0xC6:m
+	$(AVRDUDE) $(AVRDUDE_FLAGS) $(FUSES)
 	$(AVRDUDE) $(AVRDUDE_FLAGS) $(AVRDUDE_BFLAG) $(AVRDUDE_WRITE_FLASH)
 	$(AVRDUDE) $(AVRDUDE_FLAGS) $(AVRDUDE_BFLAG) $(AVRDUDE_WRITE_EEPROM)
 
@@ -210,11 +217,14 @@ full: $(TARGET).hex $(TARGET).eep
 program: $(TARGET).hex $(TARGET).eep
 	$(AVRDUDE) $(AVRDUDE_FLAGS) $(AVRDUDE_BFLAG) $(AVRDUDE_WRITE_FLASH)
 
-burn-fuse: 
-	$(AVRDUDE) $(AVRDUDE_FLAGS) $(AVRDUDE_BFLAG) -u -U lfuse:w:0xE2:m -u -U hfuse:w:0xC6:m 
+fuses: 
+	$(AVRDUDE) $(AVRDUDE_FLAGS) $(AVRDUDE_BFLAG) $(FUSES)
 
 reset:
 	$(AVRDUDE) $(AVRDUDE_FLAGS) 
+
+size: $(TARGET).elf
+	$(SILENT) $(SIZE) -C --mcu=$(MCU) $(TARGET).elf 
 
 # Eye candy.
 # AVR Studio 3.x does not check make's exit code but relies on
