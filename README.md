@@ -1,11 +1,18 @@
 # **Ice Tube Clock firmware with GPS & working Auto DST support** #
 
-Latest update March 2012 - William Phelps - wm (at) usa.net 
+Latest update August 2, 2012 - William Phelps - wm (at) usa.net 
  
 ## **Includes the following modifications:** ##
- 
+
+**Changes to run on Atmega328p
+Interrupt names
+
+**Rewrite of GPS code
+Better error checking, including CRC check
+GPS error counters visible in menu
+
 **Improvements to GPS support**  
-GPS Enable/Disabble in Menu  
+GPS Enable/Disable in Menu  
 GPS Lat & Long displayed in Menu
 
 **Rewrite of Auto DST so it works with GPS**  

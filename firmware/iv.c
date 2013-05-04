@@ -3,6 +3,7 @@
  (c) 2009 Limor Fried / Adafruit Industries
  (c) 2012 William B Phelps
 
+ 01aug12 - modify to work on atmega328 as well as 168
  30jul12 - rewrite GPS receive logic
  27jul12 - if GPS on & no signal, show message
  25jul12 - add GPS checksum check!
@@ -33,6 +34,9 @@
  Button interrupt fix by caitsith2
  Daylight Saving Time code
  Testmode feature by caitsith2
+
+Note: In this clock, the microcontroller runs off its internal 8 MHz oscillator. 
+The external clock crystal is used to provide interrupts 32768 times per second, which are counted and used to tell the time.
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -71,7 +75,7 @@ THE SOFTWARE.
 static int8_t drift_corr = 0;  /* Drift correction applied each hour */
 #endif
 
-char version[8] = "120730wm";  // program timestamp/version
+char version[8] = "120801wm";  // program timestamp/version
 
 uint8_t region = REGION_US;
 
@@ -281,7 +285,8 @@ void kickthedog(void) {
 }
 
 // called @ (F_CPU/256) = ~30khz (31.25 khz)
-SIGNAL (SIG_OVERFLOW0) {
+//SIGNAL (SIG_OVERFLOW0) {  // 168 only
+SIGNAL (TIMER0_OVF_vect) {
   // allow other interrupts to go off while we're doing display updates
   sei();
 
@@ -378,7 +383,8 @@ volatile uint8_t last_buttonstate = 0, just_pressed = 0, pressed = 0;
 volatile uint8_t buttonholdcounter = 0;
 
 // This interrupt detects switches 1 and 3
-SIGNAL(SIG_PIN_CHANGE2) {
+//SIGNAL(SIG_PIN_CHANGE2) {  // 168 only
+SIGNAL(PCINT2_vect) {
   // allow interrupts while we're doing this
   PCMSK2 = 0;
   sei();
@@ -449,7 +455,8 @@ SIGNAL(SIG_PIN_CHANGE2) {
 }
 
 // Just button #2
-SIGNAL(SIG_PIN_CHANGE0) {
+//SIGNAL(SIG_PIN_CHANGE0) {  // 168 only
+SIGNAL(PCINT0_vect) {
   PCMSK0 = 0;
   sei();
   if (! (PINB & _BV(BUTTON2))) {
@@ -557,7 +564,8 @@ SIGNAL (TIMER2_OVF_vect) {
   }
 }
 
-SIGNAL(SIG_INTERRUPT0) {
+//SIGNAL(SIG_INTERRUPT0) {  // 168 only
+SIGNAL(INT0_vect) {
   EIMSK = 0;  //Disable this interrupt while we are processing it.
   uart_putchar('i');
   uint8_t x = ALARM_PIN & _BV(ALARM);
@@ -573,7 +581,8 @@ SIGNAL(SIG_INTERRUPT0) {
 }
 
 
-SIGNAL(SIG_COMPARATOR) {
+//SIGNAL(SIG_COMPARATOR) {  // 168 only
+SIGNAL(ANALOG_COMP_vect) {
   //DEBUGP("COMP");
   if (ACSR & _BV(ACO)) {  // If AC power has been removed
     //DEBUGP("LOW");
@@ -1018,8 +1027,8 @@ int main(void) {
     //Check to see if GPS data is ready:
 		if (gpsEnabled == GPS_ON)
 		{
-			if ( gpsDataReady() )   // if there is data in the buffer
-				getGPSdata();  // get the GPS serial stream and update the clock 
+//			if ( gpsDataReady() )   // if there is data in the buffer
+			getGPSdata();  // get the GPS serial stream and update the clock 
 		}
 #endif
 	}
@@ -2383,7 +2392,8 @@ void dimmer_update(void) {
 }
 
 // Update brightness once ADC measurement completes
-SIGNAL(SIG_ADC) {
+//SIGNAL(SIG_ADC) {  // 168 only
+SIGNAL(ADC_vect) {
   uint8_t low, high;
   unsigned int val;
   if (autodim != AUTODIM_ON)
@@ -2769,9 +2779,9 @@ void spi_xfer(uint8_t c) {
 //GPS serial data handling functions:
 
 //Check to see if there is any serial data.
-uint8_t gpsDataReady(void) {
-  return (UCSR0A & _BV(RXC0));
-}
+//uint8_t gpsDataReady(void) {
+//  return (UCSR0A & _BV(RXC0));
+//}
 
 // get data from gps and update the clock (if possible)
 //$GPRMC,225446,A,4916.45,N,12311.12,W,000.5,054.7,191194,020.3,E*68\r\n
@@ -2782,8 +2792,10 @@ void getGPSdata(void) {
 //  uint8_t intOldHr = 0;
 //  uint8_t intOldMin = 0;
 //  uint8_t intOldSec = 0;
+	if (!(UCSR0A & _BV(RXC0)))  // anything on the serial port?
+		return;  // no, all done
+  char charReceived = UDR0;  // get a byte from the port
 	uint8_t bufflen = strlen(gpsBuffer);
-  char charReceived = UDR0;
   //If the buffer has not been started, check for '$'
   if ( ( bufflen == 0 ) &&  ( '$' != charReceived ) )
 		return;  // wait for start of next sentence from GPS
@@ -2792,6 +2804,8 @@ void getGPSdata(void) {
 			strncat(gpsBuffer, &charReceived, 1);  // add char to buffer
 			return;
 		}
+		else
+			strncat(gpsBuffer, "*", 1);  // mark end of buffer just in case
 		// end of sentence - is this the message we are looking for?
 		if ( strncmp( gpsBuffer, "$GPRMC,", 7 ) == 0 ) {  
 			//Calculate checksum from the received data
