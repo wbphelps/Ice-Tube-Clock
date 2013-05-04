@@ -5,16 +5,16 @@ Latest update October 12, 2012 - William Phelps - wm (at) usa.net
 ## **Includes the following modifications:** ##
 
 **Updates in v121012wm**
- 12oct12 - fix set volume low/high
- 06oct12 - fix Auto DST in southern hemisphere
- 27sep12 - add support for 9600 bps gps
+ 12oct12 - fix set volume low/high  
+ 06oct12 - fix Auto DST in southern hemisphere  
+ 27sep12 - add support for 9600 bps gps  
  28aug12 - fix check for space in gps buffer (string null term)
  
 **Changes to run on Atmega328p**
 Interrupt names
 
 **Rewrite of GPS code**
-Better error checking, including CRC check
+Better error checking, including CRC check  
 GPS error counters visible in menu
 
 **Improvements to GPS support**  
