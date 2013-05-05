@@ -3,6 +3,7 @@
  (c) 2009 Limor Fried / Adafruit Industries
  (c) 2013 William B Phelps
 
+ 05may13 - add gps 2 message test
  06apr13 - fix error in Auto DST for southern hemisphere
  05nov12 - fix bugs in Auto DST code
  12oct12 - fix set volume low/high
@@ -181,6 +182,8 @@ char gpsLong[7];  // ddddmmff  (without decimal point)
 char gpsLongH[1];  // hemisphere 
 char *gpsPtr;
 char gpsCheck1, gpsCheck2;
+char gpsPrevTime[7] = "000000";
+char gpsPrevDate[7] = "000000";
 #endif
 
 // Variables for the timezone offset if using GPS.
@@ -2816,6 +2819,16 @@ uint8_t gpsDataReady(void) {
 // 0         1         2         3         4         5         6         7
 // 01234567890123456789012345678901234567890123456789012345678901234567890
 //    0     1   2    3    4     5    6   7     8      9     10  11 12
+//
+//  225446       Time of fix hhmmss 22:54:46 UTC
+//  A            Navigation receiver warning A = OK, V = warning
+//  4916.45,N    Latitude 49 deg. 16.45 min North
+//  12311.12,W   Longitude 123 deg. 11.12 min West
+//  000.5        Speed over ground, Knots
+//  054.7        Course Made Good, True
+//  191194       Date of fix ddmmyy 19 November 1994
+//  020.3,E      Magnetic variation 20.3 deg East
+//  *68          mandatory checksum
 void getGPSdata(void) {
 //  uint8_t intOldHr = 0;
 //  uint8_t intOldMin = 0;
@@ -2894,19 +2907,22 @@ void getGPSdata(void) {
 
 // set time from gps data gathered previously
 void getGPStime(void) {
-	//The GPS unit will not have the proper date unless it has received a time update.
-	//NOTE: at the turn of the century, the clock will not get updates from GPS
-	//for as many years as the value of PROGRAMMING_YEAR
-	// check value of restored ???
-	if ( restored && ( PROGRAMMING_YEAR <= ( ( (gpsDate[4] - '0') * 10 ) ) + (gpsDate[5] - '0') ) ) {
-		//Get the 'old' values of the time in minutes:
-//		uint16_t oldTime = ((time_h * 60) + time_m);
-		//Change the time:
-		setgpstime(gpsTime);
-		//Change the date:
-		setgpsdate(gpsDate);
-		//Gussy up the time and date, make the numbers come out right:
-		fix_time();
+	// this is only called when GPRMC message is received, the checksums match, and Status = 'A' 
+//	if ( restored && ( PROGRAMMING_YEAR <= ( ( (gpsDate[4] - '0') * 10 ) ) + (gpsDate[5] - '0') ) ) {
+	if ( restored ) {  // clock running?
+		// only accept GPS data if 2 messages in sequence have same Year, Month, Day, Hour, and Minute
+		// this catches corrupt message strings, but also skips a few messages
+		// the GPS emits a GPRMC message once a second, so skipping a message now and then is fine
+		if (strncmp(gpsDate, gpsPrevDate, 6) && strncmp(gpsTime,gpsPrevTime,4)) {
+  		//Change the time:
+	  	setgpstime(gpsTime);
+		  //Change the date:
+		  setgpsdate(gpsDate);
+		  //Gussy up the time and date, make the numbers come out right:
+		  fix_time();
+		}
+		strncpy(gpsPrevDate, gpsDate, 6);  // save gps date & time for next check
+		strncpy(gpsPrevTime, gpsTime, 6);
 		
 // //Get the 'new' value of the time and the alarm time in minutes:
 // // this code is broken - it causes alarm at midnight

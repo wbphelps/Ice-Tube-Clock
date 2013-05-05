@@ -94,7 +94,7 @@ THE SOFTWARE.
 #define DEBUGP(x)  if (DEBUG) {putstring_nl(x);}
 
 //The year the clock was programmed, used for error checking
-#define PROGRAMMING_YEAR 11
+#define PROGRAMMING_YEAR 13
 
 #define REGION_US 0
 #define REGION_EU 1
