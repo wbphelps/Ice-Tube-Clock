@@ -1,8 +1,11 @@
 # **Ice Tube Clock firmware with GPS & working Auto DST support** #
 
-Latest update November 05, 2012 - William Phelps - wm (at) usa.net 
+Latest update April 6, 2013 - William Phelps - wm (at) usa.net 
  
 ## **Includes the following modifications:** ##
+
+**Updates in v130406wm**  
+ 06apr13 - fix error in Auto DST for southern hemisphere  
 
 **Updates in v121105wm**  
  05nov12 - fix bugs in Auto DST code  
