@@ -82,7 +82,7 @@ THE SOFTWARE.
 static int8_t drift_corr = 0;  /* Drift correction applied each hour */
 #endif
 
-char version[8] = "130406wm";  // program timestamp/version
+char version[8] = "130505wm";  // program timestamp/version
 
 uint8_t region = REGION_US;
 

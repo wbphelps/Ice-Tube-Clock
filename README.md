@@ -1,10 +1,15 @@
 # **Ice Tube Clock firmware with GPS & working Auto DST support** #
 
-Latest update April 6, 2013 - William Phelps - wm (at) usa.net 
+Latest update May 5, 2013 - William Phelps - wm (at) usa.net 
  
 ## **Includes the following modifications:** ##
 
-**Updates in v130406wm**  
+**Updates in v130505wm**  
+ 05may13 - add GPS 2 message test
+ Note: 2 GPRMC messages in a row must have same year, month, day, hour, & minute 
+ This prevents a garbled GPS messages from setting the clock to the wrong time or date
+
+ **Updates in v130406wm**  
  06apr13 - fix error in Auto DST for southern hemisphere  
 
 **Updates in v121105wm**  
