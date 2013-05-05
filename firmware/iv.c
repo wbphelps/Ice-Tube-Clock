@@ -1,8 +1,9 @@
 /***************************************************************************
  Ice Tube Clock with GPS & Auto DST firmware Nov 6, 2011
  (c) 2009 Limor Fried / Adafruit Industries
- (c) 2012 William B Phelps
+ (c) 2013 William B Phelps
 
+ 06apr13 - fix error in Auto DST for southern hemisphere
  05nov12 - fix bugs in Auto DST code
  12oct12 - fix set volume low/high
  06oct12 - fix Auto DST in southern hemisphere
@@ -80,7 +81,7 @@ THE SOFTWARE.
 static int8_t drift_corr = 0;  /* Drift correction applied each hour */
 #endif
 
-char version[8] = "121105wm";  // program timestamp/version
+char version[8] = "130406wm";  // program timestamp/version
 
 uint8_t region = REGION_US;
 
@@ -3182,17 +3183,17 @@ void setDSToffset(uint8_t rules[9])
 	uint8_t hour2 = rules[7];
 	uint8_t offset = rules[8];
 	// if current time & date is at or past the first DST rule and before the second, set dst_offset, otherwise reset dst_offset
-  long seconds1 = DSTseconds(month1,dotw1, n1, hour1);  // seconds til start of DST this year
-  long seconds2 = DSTseconds(month2,dotw2, n2, hour2);  // seconds til end of DST this year
-  long seconds_now = yearSeconds(date_y, date_m, date_d, time_h, time_m, time_s);
-	if (seconds2>seconds1) {  // northern hemisphere
-		if ((seconds_now >= seconds1) && (seconds_now < seconds2))  // spring ahead
+  long seconds_start = DSTseconds(month1,dotw1, n1, hour1);  // seconds til DST starts this year
+  long seconds_end = DSTseconds(month2,dotw2, n2, hour2);  // seconds til DST ends this year
+  long seconds_now = yearSeconds(date_y, date_m, date_d, time_h, time_m, time_s);  //time now in seconds this year
+	if (seconds_end>seconds_start) {  // dst end later than start - northern hemisphere
+		if ((seconds_now >= seconds_start) && (seconds_now < seconds_end))  // spring ahead
 			adjDSToffset(offset);
 		else  // fall back
 			adjDSToffset(0);
 	}
-	else {  // southern hemisphere
-		if ((seconds_now >= seconds2) || (seconds_now < seconds1))  // fall ahead
+	else {  // dst start later in year than dst end - southern hemisphere
+		if ((seconds_now >= seconds_start) || (seconds_now < seconds_end))  // fall ahead
 			adjDSToffset(offset);
 		else  // spring back
 			adjDSToffset(0);
