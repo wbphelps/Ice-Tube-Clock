@@ -3,6 +3,8 @@
  (c) 2009 Limor Fried / Adafruit Industries
  (c) 2013 William B Phelps
 
+ 06may13 - option to flash dp if no GPS signal
+ 06may13 - clean up all warning messages
  05may13 - add gps 2 message test
  06apr13 - fix error in Auto DST for southern hemisphere
  05nov12 - fix bugs in Auto DST code
@@ -82,7 +84,7 @@ THE SOFTWARE.
 static int8_t drift_corr = 0;  /* Drift correction applied each hour */
 #endif
 
-char version[8] = "130505wm";  // program timestamp/version
+char version[8] = "130506wm";  // program timestamp/version
 
 uint8_t region = REGION_US;
 
@@ -120,22 +122,25 @@ uint8_t secsdiv = 0;
 uint8_t secscnt = 0;
 #define SECS_DIVIDER 150  // set freq to 1/6 second.  secsmdiv is incremented at 900 hz
 
+typedef PGM_P PROGMEM prog_pgmp; 
+#define PGM_P2 const prog_pgmp *
+
 const uint16_t dialsegs1[] PROGMEM =  // inner segment dance, by Larry Frank
   {0x620E, 0x200E, 0x400E, 0x600C, 0x6204, 0x6208};  // 6 steps
-PGM_P dialsegs1_p PROGMEM = dialsegs1;
+PGM_P const dialsegs1_p PROGMEM = (char*)dialsegs1;
 const uint16_t dialsegs2[] PROGMEM =  // outer segments only
   {0x8080, 0x0080, 0x0040, 0x0020, 0x0010, 0x1010, 0x1000, 0x0800, 0x0400, 0x8000};  // 10 steps
 //const uint16_t dialsegs2[] PROGMEM =  // outer segments only
 //  {0x9C70, 0x9CB0, 0x9CD0, 0x9CE0, 0x8CF0, 0x94F0, 0x98F0, 0x1CF0};  // 8 steps
-PGM_P dialsegs2_p PROGMEM = dialsegs2;
+PGM_P const dialsegs2_p PROGMEM = (char*)dialsegs2;
 //const uint16_t dialsegs3[] PROGMEM =  // radial pattern, outer segment cups
 //	{0xC084, 0x00C4, 0x00C2, 0x0062, 0x0032, 0x0038, 0x3018, 0x3800, 0x1A00, 0x0E00, 0x8600, 0xC400};  // 12 steps
 const uint16_t dialsegs3[] PROGMEM =  // snake pattern, 12 steps
 	{0x80C0, 0x00C2, 0x0242, 0x0A02, 0x1A00, 0x1810, 0x1030, 0x0032, 0x0222, 0x0602, 0x8600, 0x8480};  
-PGM_P dialsegs3_p PROGMEM = dialsegs3;
+PGM_P const dialsegs3_p PROGMEM = (char*)dialsegs3;
 const uint16_t dialsegs4[] PROGMEM =  // inner segment radial pattern, fast
   {0x0004, 0x0002, 0x0008, 0x2000, 0x0200, 0x4000};  // 6 steps
-PGM_P dialsegs4_p PROGMEM = dialsegs4;
+PGM_P const dialsegs4_p PROGMEM = (char*)dialsegs4;
 
  #endif
 // whether the alarm is on, going off, and alarm time
@@ -172,7 +177,7 @@ static const uint16_t tmDays[]={0,31,59,90,120,151,181,212,243,273,304,334}; // 
 char gpsBuffer[GPSBUFFERSIZE];
 volatile uint8_t gpsEnabled = 0;
 #define gpsTimeoutLimit 5  // 5 seconds until we display the "no gps" message
-uint16_t gpsTimeout = 0;  // how long since we received valid GPS data?
+uint8_t gpsUpdating = gpsTimeoutLimit;  // how long since we received valid GPS data? (in seconds)
 char gpsTime[7];
 char gpsDate[7];
 char gpsFixStat[1];  // fix status
@@ -202,18 +207,18 @@ volatile uint8_t ldbb = 0;  // Last Digit Brightness Boost
 // This table allow us to index between what digit we want to light up
 // and what the pin number is on the MAX6921 see the .h for values.
 // Stored in ROM (PROGMEM) to save RAM
-const uint8_t digittable[] PROGMEM = {
+const char digittable[] PROGMEM = {
   DIG_9, DIG_8, DIG_7, DIG_6, DIG_5, DIG_4, DIG_3, DIG_2, DIG_1
 };
-PGM_P digittable_p PROGMEM = digittable;
+PGM_P const digittable_p PROGMEM = digittable;
 
 // This table allow us to index between what segment we want to light up
 // and what the pin number is on the MAX6921 see the .h for values.
 // Stored in ROM (PROGMEM) to save RAM
-const uint8_t segmenttable[] PROGMEM = {
+const char segmenttable[] PROGMEM = {
   SEG_H, SEG_G,  SEG_F,  SEG_E,  SEG_D,  SEG_C,  SEG_B,  SEG_A 
 };
-PGM_P segmenttable_p PROGMEM = segmenttable;
+PGM_P const segmenttable_p PROGMEM = segmenttable;
 
 // muxdiv and MUX_DIVIDER divides down a high speed interrupt (31.25KHz)  
 // down so that we can refresh at about 100Hz (31.25KHz / 300)
@@ -537,13 +542,13 @@ SIGNAL (TIMER2_OVF_vect) {
   // If we're in low power mode we should get out now since the display is off
   if (sleepmode)
     return;
-	if (gpsTimeout < gpsTimeoutLimit)
-		gpsTimeout++;  // 1 second has gone by
+	if (gpsUpdating>0)
+		gpsUpdating--;  // 1 second has gone by
 	
   if (displaymode == SHOW_TIME) {
     if (!timeknown && (time_s % 2)) {  // if time unknown, blink the display
       display_str("        ");
-    } else if ( gpsEnabled && (gpsTimeout>=gpsTimeoutLimit) && (time_s % 2) ) {  // if no data from gps
+    } else if ( gpsEnabled && (gpsUpdating==0) && (secsmode!=9) && (time_s % 2) ) {  // if no data from gps
       display_str(" no gps ");
     } else {
       display_time(time_h, time_m, time_s);
@@ -2108,6 +2113,7 @@ void show_secsmode(void) {
 		case 6: display_str(" am-pm. "); display[7] |= 0x1; break;
 		case 7: display_str(" none   "); break;
 		case 8: display_str(" none.  "); display[6] |= 0x1; break;
+		case 9: display_str(" fullgps"); display[8] |= 0x1; break;  // full with GPS update shown
 	}
 }
 
@@ -2143,7 +2149,7 @@ void set_secsmode(void) {
       just_pressed = 0;
       if (mode == SET_SECSMODE) {
         secsmode ++;
-				if (secsmode > 8)
+				if (secsmode > 9)  // 06may13/wbp
 					secsmode = 0;
 				show_secsmode();
       }
@@ -2650,6 +2656,15 @@ void display_time(uint8_t h, uint8_t m, uint8_t s) {
 			if (secsmode == 8)  // blink decimal point
 				display[8] |= (s&1);
 			break;
+		case 9:  // use dp to show GPS status - solid if good signal
+			display_num(7, s, 0);
+			if (gpsUpdating>0) {
+				display[8] |= 1;  // solid dp indicates gps signal reception
+			}
+			else {
+				display[8] |= (s&1);  // blink decimal point
+				}
+			break;
 		}
 	 }
 	else
@@ -2878,7 +2893,7 @@ void getGPSdata(void) {
 				gpsPtr = strchr( gpsPtr + 1, ',');  // find the next comma
 				memcpy( gpsFixStat, gpsPtr + 1, 1 );  // copy fix status
 				if (gpsFixStat[0] == 'A') {  // if data valid, update time & date
-					gpsTimeout = 0;  // reset gps timeout counter
+//					gpsTimeout = 0;  // reset gps timeout counter
 					gpsPtr = strchr( gpsPtr + 1, ',');  // find the next comma
 					memcpy( gpsLat, gpsPtr + 1, 4 );  // copy Latitude ddmm
 					memcpy( gpsLat + 4, gpsPtr + 6, 2 );  // copy Latitude ff
@@ -2914,6 +2929,7 @@ void getGPStime(void) {
 		// this catches corrupt message strings, but also skips a few messages
 		// the GPS emits a GPRMC message once a second, so skipping a message now and then is fine
 		if ((strncmp(gpsDate, gpsPrevDate, 6) == 0) && (strncmp(gpsTime,gpsPrevTime,4) == 0)) {
+			gpsUpdating = gpsTimeoutLimit;  // good signal has been received from GPS
   		//Change the time:
 	  	setgpstime(gpsTime);
 		  //Change the date:

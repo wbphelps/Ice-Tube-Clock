@@ -1,9 +1,13 @@
 # **Ice Tube Clock firmware with GPS & working Auto DST support** #
 
-Latest update May 5, 2013 - William Phelps - wm (at) usa.net 
+Latest update May 6, 2013 - William Phelps - wm (at) usa.net 
  
 ## **Includes the following modifications:** ##
 
+**Updates in v130505wm**  
+06may13 - option to flash dp if no GPS signal ("secs=fullgps")  
+06may13 - clean up all warning messages
+ 
 **Updates in v130505wm**  
  05may13 - add GPS 2 message test
  Note: 2 GPRMC messages in a row must have same year, month, day, hour, & minute 

@@ -406,4 +406,4 @@ enum dispmodes {
 #define DIG_8 7
 #define DIG_9 3
 
-#define nop asm("nop")
+//#define nop asm("nop")
