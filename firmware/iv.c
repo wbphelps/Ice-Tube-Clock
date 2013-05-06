@@ -2913,7 +2913,7 @@ void getGPStime(void) {
 		// only accept GPS data if 2 messages in sequence have same Year, Month, Day, Hour, and Minute
 		// this catches corrupt message strings, but also skips a few messages
 		// the GPS emits a GPRMC message once a second, so skipping a message now and then is fine
-		if (strncmp(gpsDate, gpsPrevDate, 6) && strncmp(gpsTime,gpsPrevTime,4)) {
+		if ((strncmp(gpsDate, gpsPrevDate, 6) == 0) && (strncmp(gpsTime,gpsPrevTime,4) == 0)) {
   		//Change the time:
 	  	setgpstime(gpsTime);
 		  //Change the date:
