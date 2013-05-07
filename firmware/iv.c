@@ -160,7 +160,7 @@ volatile uint8_t restored = 0;
 #ifdef FEATURE_WmDST
 volatile uint8_t dst_mode;
 volatile int8_t dst_offset = 0;  // DST adjustment, used by gpssettime
-volatile uint8_t dst_update;  // DST Update allowed now? (Reset at midnight)
+volatile uint8_t dst_update = 0;  // DST Update allowed now? (Reset at midnight)
 uint8_t dst_rules[9]={3,1,2,2,11,1,1,2,1};   // initial values from US DST rules as of 2011
 // DST Rules: Start(month, dotw, n, hour), End(month, dotw, n, hour), Offset
 // DOTW is Day of the Week, 1=Sunday, 7=Saturday
@@ -863,7 +863,6 @@ int main(void) {
     region = eeprom_read_byte((uint8_t *)EE_REGION); 
 #ifdef FEATURE_WmDST
     dst_mode = eeprom_read_byte((uint8_t *)EE_DSTMODE);
-		if (dst_mode == DST_AUTO) {
 			i = eeprom_read_byte((uint8_t *)EE_DSTRULE0);  // check rule 0 to see if rules have been saved
 			if (i > 0) {  // first rule is month number, value must be 1 to 12
 				for (i = 0; i < 9; i++) {
@@ -871,7 +870,6 @@ int main(void) {
 				}
 			dst_offset = eeprom_read_byte((uint8_t *)EE_DSTOFFSET);  // get last known DST Offset
 			}
-		}
 #endif
 #ifdef FEATURE_GPS
     gpsEnabled = eeprom_read_byte((uint8_t *)EE_GPSENABLE);
@@ -1204,10 +1202,10 @@ void set_time(void)
 				time_s = sec;
 				displaymode = SHOW_TIME;
 #ifdef FEATURE_WmDST
-				dst_update = DST_YES;  // Reset DST Update flag
-				setDSToffset(dst_rules);  // Setup Auto DST per current rules
-				dst_update = DST_YES;  // Reset DST Update flag in case time to adjust is soon
-				time_h = hour;  // set hour back to what wsa displayed
+//				dst_update = DST_YES;  // Reset DST Update flag
+//				setDSToffset(dst_rules);  // Setup Auto DST per current rules
+//				dst_update = DST_YES;  // Reset DST Update flag in case time to adjust is soon
+//				time_h = hour;  // set hour back to what was displayed
 #endif
 				eeprom_write_byte((uint8_t *)EE_HOUR, time_h);    
 				eeprom_write_byte((uint8_t *)EE_MIN, time_m);
@@ -1298,8 +1296,8 @@ void set_date(void) {
 				displaymode = SHOW_TIME;
 #ifdef FEATURE_WmDST
 				dst_update = DST_YES;  // Reset DST Update flag
-				setDSToffset(dst_rules);  // Setup Auto DST per current rules
-				dst_update = DST_YES;  // Reset DST Update flag in case time to adjust is soon
+				setDSToffset(dst_rules);  // Date changed, set DST offset per current rules
+//				dst_update = DST_YES;  // Reset DST Update flag in case time to adjust is soon
 #endif
 				eeprom_write_byte((uint8_t *)EE_YEAR, date_y);    
 				eeprom_write_byte((uint8_t *)EE_MONTH, date_m);    
@@ -1797,8 +1795,8 @@ void set_dstmode(void) {
 				if (dst_mode == DST_ON) {
 					dst_mode = DST_AUTO;
 					dst_update = DST_YES;  // allow DST Offset to be adjusted
-					setDSToffset(dst_rules);  // Setup Auto DST per current rules
-					dst_update = DST_YES;  // Reset DST Update flag in case time to adjust is soon
+					setDSToffset(dst_rules);  // Set DST offset per current rules
+//					dst_update = DST_YES;  // Reset DST Update flag in case time to adjust is soon
 				} else if (dst_mode == DST_AUTO) {
 					dst_mode = DST_OFF;
 					if (dst_offset > 0) {
@@ -2658,12 +2656,14 @@ void display_time(uint8_t h, uint8_t m, uint8_t s) {
 			break;
 		case 9:  // use dp to show GPS status - solid if good signal
 			display_num(7, s, 0);
-			if (gpsUpdating>0) {
-				display[8] |= 1;  // solid dp indicates gps signal reception
-			}
-			else {
-				display[8] |= (s&1);  // blink decimal point
+			if (gpsEnabled) {
+				if (gpsUpdating>0) {
+					display[8] |= 1;  // solid dp indicates gps signal reception
 				}
+				else {
+					display[8] |= (s&1);  // blink decimal point
+				}
+			}
 			break;
 		}
 	 }
@@ -3190,6 +3190,14 @@ void adjDSToffset(uint8_t offset)
 {
 	int8_t adj = offset - dst_offset;
 	if ((dst_offset != offset) && (dst_update == DST_YES)) {
+		if (adj>0) { // add to hour?
+			beep(440,1);
+			beep(880,1);
+		}
+		else { // subtract
+			beep(880,1);
+			beep(440,1);
+		}
 		dst_offset = offset;
 		time_h += adj;  // if this is the first time, bump the hour
 		eeprom_write_byte((uint8_t *)EE_DSTOFFSET, offset);  // remember setting for power up
@@ -3219,10 +3227,12 @@ void setDSToffset(uint8_t rules[9])
   long seconds_end = DSTseconds(month2,dotw2, n2, hour2);  // seconds til DST ends this year
   long seconds_now = yearSeconds(date_y, date_m, date_d, time_h, time_m, time_s);  //time now in seconds this year
 	if (seconds_end>seconds_start) {  // dst end later than start - northern hemisphere
-		if ((seconds_now >= seconds_start) && (seconds_now < seconds_end))  // spring ahead
+		if ((seconds_now >= seconds_start) && (seconds_now < seconds_end)) { // spring ahead
 			adjDSToffset(offset);
-		else  // fall back
+		}
+		else { // fall back
 			adjDSToffset(0);
+		}
 	}
 	else {  // dst start later in year than dst end - southern hemisphere
 		if ((seconds_now >= seconds_start) || (seconds_now < seconds_end))  // fall ahead
