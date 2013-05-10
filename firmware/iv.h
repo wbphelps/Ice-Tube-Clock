@@ -106,7 +106,7 @@ THE SOFTWARE.
 #define DISPLAYSIZE 9
 
 #define MAXSNOOZE 600 // 10 minutes
-#define INACTIVITYTIMEOUT 10 // how many seconds we will wait before turning off menus
+#define INACTIVITYTIMEOUT 6 // how many seconds we will wait before turning off menus
 
 #define BRITE_MAX 90
 #ifdef FEATURE_AUTODIM
@@ -218,6 +218,7 @@ void set_snoozetime(void); // not activated by default
 #ifdef FEATURE_WmDST
 void set_dstmode(void);
 void set_dstrules(void);
+void show_dstoffset(void);
 #endif
 #ifdef FEATURE_GPS
 void set_gpsenable(void);  // wbp
@@ -244,7 +245,7 @@ void fix_time(void);
 void set_timezone(void);
 #ifdef FEATURE_WmDST
 long Seconds(uint8_t yr, uint8_t mo, uint8_t da, uint8_t h, uint8_t m, uint8_t s);
-void setDSToffset(uint8_t rules[]);
+void setDSToffset(void);
 void save_dstrules(uint8_t mods[]);
 #endif
 
@@ -277,7 +278,6 @@ enum dispmodes {
 	SET_ALARM,
 	SET_TIME,
 	SET_DATE,
-
 #ifdef FEATURE_AUTODIM
 	SET_AUTODIM,
 #endif

@@ -3,6 +3,7 @@
  (c) 2009 Limor Fried / Adafruit Industries
  (c) 2013 William B Phelps
 
+ 09may13 - fix silly bug in auto dst
  06may13 - option to flash dp if no GPS signal
  06may13 - clean up all warning messages
  05may13 - add gps 2 message test
@@ -84,7 +85,7 @@ THE SOFTWARE.
 static int8_t drift_corr = 0;  /* Drift correction applied each hour */
 #endif
 
-char version[8] = "130506wm";  // program timestamp/version
+char version[8] = "130509wm";  // program timestamp/version
 
 uint8_t region = REGION_US;
 
@@ -159,7 +160,7 @@ volatile uint8_t restored = 0;
 
 #ifdef FEATURE_WmDST
 volatile uint8_t dst_mode;
-volatile int8_t dst_offset = 0;  // DST adjustment, used by gpssettime
+volatile uint8_t dst_offset = 0;  // current DST offset, also used by gpssettime
 volatile uint8_t dst_update = 0;  // DST Update allowed now? (Reset at midnight)
 uint8_t dst_rules[9]={3,1,2,2,11,1,1,2,1};   // initial values from US DST rules as of 2011
 // DST Rules: Start(month, dotw, n, hour), End(month, dotw, n, hour), Offset
@@ -176,8 +177,9 @@ static const uint16_t tmDays[]={0,31,59,90,120,151,181,212,243,273,304,334}; // 
 // String buffer for processing GPS data:
 char gpsBuffer[GPSBUFFERSIZE];
 volatile uint8_t gpsEnabled = 0;
-#define gpsTimeoutLimit 5  // 5 seconds until we display the "no gps" message
-uint8_t gpsUpdating = gpsTimeoutLimit;  // how long since we received valid GPS data? (in seconds)
+#define gpsTimeout1 5  // 5 seconds until we turn off the gps signal dp
+#define gpsTimeout2 15  // 15 seconds until we display the "no gps" message or start flashing the dp
+uint8_t gpsTimeout = 0;  // how long since we received valid GPS data? (in seconds)
 char gpsTime[7];
 char gpsDate[7];
 char gpsFixStat[1];  // fix status
@@ -542,13 +544,13 @@ SIGNAL (TIMER2_OVF_vect) {
   // If we're in low power mode we should get out now since the display is off
   if (sleepmode)
     return;
-	if (gpsUpdating>0)
-		gpsUpdating--;  // 1 second has gone by
+	if (gpsTimeout <= gpsTimeout2)
+		gpsTimeout ++;  // 1 second has gone by
 	
   if (displaymode == SHOW_TIME) {
     if (!timeknown && (time_s % 2)) {  // if time unknown, blink the display
       display_str("        ");
-    } else if ( gpsEnabled && (gpsUpdating==0) && (secsmode!=9) && (time_s % 2) ) {  // if no data from gps
+    } else if ( gpsEnabled && (gpsTimeout>gpsTimeout2) && (secsmode!=9) && (time_s % 2) ) {  // if no data from gps
       display_str(" no gps ");
     } else {
       display_time(time_h, time_m, time_s);
@@ -863,13 +865,13 @@ int main(void) {
     region = eeprom_read_byte((uint8_t *)EE_REGION); 
 #ifdef FEATURE_WmDST
     dst_mode = eeprom_read_byte((uint8_t *)EE_DSTMODE);
-			i = eeprom_read_byte((uint8_t *)EE_DSTRULE0);  // check rule 0 to see if rules have been saved
-			if (i > 0) {  // first rule is month number, value must be 1 to 12
-				for (i = 0; i < 9; i++) {
-					dst_rules[i] = eeprom_read_byte((uint8_t *)EE_DSTRULE0+i);  // read DST rules from EE prom
-				}
-			dst_offset = eeprom_read_byte((uint8_t *)EE_DSTOFFSET);  // get last known DST Offset
+		dst_offset = eeprom_read_byte((uint8_t *)EE_DSTOFFSET);  // get last known DST Offset
+		i = eeprom_read_byte((uint8_t *)EE_DSTRULE0);  // check rule 0 to see if rules have been saved
+		if (i > 0) {  // first rule is month number, value must be 1 to 12
+			for (i = 0; i < 9; i++) {
+				dst_rules[i] = eeprom_read_byte((uint8_t *)EE_DSTRULE0+i);  // read DST rules from EE prom
 			}
+		}
 #endif
 #ifdef FEATURE_GPS
     gpsEnabled = eeprom_read_byte((uint8_t *)EE_GPSENABLE);
@@ -1130,13 +1132,13 @@ void set_alarm(void)
 
 void show_about(void)
 {
-  timeoutcounter = INACTIVITYTIMEOUT;;  
+  timeoutcounter = INACTIVITYTIMEOUT;
   while (1) {
     if (just_pressed & 0x1) { // mode change
       return;
     }
     if (just_pressed || pressed) {
-      timeoutcounter = INACTIVITYTIMEOUT;  
+      timeoutcounter = INACTIVITYTIMEOUT;
       // timeout w/no buttons pressed after 3 seconds?
     } else if (!timeoutcounter) {
       //timed out!
@@ -1167,7 +1169,7 @@ void set_time(void)
       return;
     }
     if (just_pressed || pressed) {
-      timeoutcounter = INACTIVITYTIMEOUT;  
+      timeoutcounter = INACTIVITYTIMEOUT;
       // timeout w/no buttons pressed after 3 seconds?
     } else if (!timeoutcounter) {
       //timed out!
@@ -1202,8 +1204,8 @@ void set_time(void)
 				time_s = sec;
 				displaymode = SHOW_TIME;
 #ifdef FEATURE_WmDST
-//				dst_update = DST_YES;  // Reset DST Update flag
-//				setDSToffset(dst_rules);  // Setup Auto DST per current rules
+				dst_update = DST_YES;  // Reset DST Update flag
+				setDSToffset();  // Setup Auto DST per current rules
 //				dst_update = DST_YES;  // Reset DST Update flag in case time to adjust is soon
 //				time_h = hour;  // set hour back to what was displayed
 #endif
@@ -1295,9 +1297,11 @@ void set_date(void) {
 				delayms(1500);
 				displaymode = SHOW_TIME;
 #ifdef FEATURE_WmDST
-				dst_update = DST_YES;  // Reset DST Update flag
-				setDSToffset(dst_rules);  // Date changed, set DST offset per current rules
-//				dst_update = DST_YES;  // Reset DST Update flag in case time to adjust is soon
+				if (dst_mode == DST_AUTO) {
+					dst_update = DST_YES;  // Reset DST Update flag
+					setDSToffset();  // Date changed, set DST offset per current rules
+//					dst_update = DST_YES;  // Reset DST Update flag in case time to adjust is soon
+				}
 #endif
 				eeprom_write_byte((uint8_t *)EE_YEAR, date_y);    
 				eeprom_write_byte((uint8_t *)EE_MONTH, date_m);    
@@ -1687,13 +1691,13 @@ void display_value(unsigned char p, unsigned char n, uint16_t val) {
 
 void set_autobrightness(void) {  // set brightness levels if autodim on
   uint8_t mode = SHOW_MENU;
-  timeoutcounter = INACTIVITYTIMEOUT;;  
+  timeoutcounter = INACTIVITYTIMEOUT;
 	autodim_lo = eeprom_read_byte((uint8_t *)EE_AUTODIMLO);
 	autodim_hi = eeprom_read_byte((uint8_t *)EE_AUTODIMHI);
 	autodim = AUTODIM_OFF;  // temporarily suspend auto dimming
   while (1) {
     if (just_pressed || pressed) {
-      timeoutcounter = INACTIVITYTIMEOUT;;  
+      timeoutcounter = INACTIVITYTIMEOUT;
       // timeout w/no buttons pressed after 3 seconds?
     } else if (!timeoutcounter) {
       //timed out!
@@ -1765,10 +1769,10 @@ void show_dstmode(void) {
 
 void set_dstmode(void) {
   uint8_t mode = SHOW_MENU;
-  timeoutcounter = INACTIVITYTIMEOUT;;  
+  timeoutcounter = INACTIVITYTIMEOUT;
   while (1) {
     if (just_pressed || pressed) {
-      timeoutcounter = INACTIVITYTIMEOUT;;  
+      timeoutcounter = INACTIVITYTIMEOUT;
       // timeout w/no buttons pressed after 3 seconds?
     } else if (!timeoutcounter) {
       //timed out!
@@ -1779,11 +1783,14 @@ void set_dstmode(void) {
       return;
     }
     if (just_pressed & 0x2) {  // select
-      just_pressed = 0;
+			just_pressed = 0;
       if (mode == SHOW_MENU) {
 				// start!
 				mode = SET_DSTMODE;
 				show_dstmode();
+			}	else if (mode == SET_DSTMODE) {
+				mode = SET_DSTMODE+1;  // actual value doesn't matter as long as it's different
+				show_dstoffset();
       } else {	
 				displaymode = SHOW_TIME;
 				return;
@@ -1795,7 +1802,7 @@ void set_dstmode(void) {
 				if (dst_mode == DST_ON) {
 					dst_mode = DST_AUTO;
 					dst_update = DST_YES;  // allow DST Offset to be adjusted
-					setDSToffset(dst_rules);  // Set DST offset per current rules
+					setDSToffset();  // Set DST offset per current rules
 //					dst_update = DST_YES;  // Reset DST Update flag in case time to adjust is soon
 				} else if (dst_mode == DST_AUTO) {
 					dst_mode = DST_OFF;
@@ -1819,6 +1826,12 @@ void set_dstmode(void) {
       }
     }
   }
+}
+
+void show_dstoffset(void)
+{
+	display_num(7, dst_offset, 0);
+	display_str("offset ");
 }
 
 void set_dstrules(void)
@@ -1884,13 +1897,13 @@ void save_dstrules(uint8_t mod[9]) {
 		}
 		if (ch)  {
 			dst_update = DST_YES;  // allow DST Offset to be adjusted
-			setDSToffset(dst_rules);  // if rules changed, update DST offset
+			setDSToffset();  // if rules changed, update DST offset
 		}
 	}
 }
 
 void display_dstrule(uint8_t i) {
-  display[5] = get_number(i) | 0x1;
+  display[5] = get_number(i) | 0x0;
 //  display[7] = get_number((dst_rules[i] / 10)) | 0x1;
 //  display[8] = get_number((dst_rules[i] % 10)) | 0x1;
 	display_num(7, dst_rules[i], 0x1);
@@ -1901,11 +1914,11 @@ void display_dstrule(uint8_t i) {
 void set_test(void) {
   uint8_t mode = SHOW_MENU;
 
-  timeoutcounter = INACTIVITYTIMEOUT;;  
+  timeoutcounter = INACTIVITYTIMEOUT;
 
   while (1) {
     if (just_pressed || pressed) {
-      timeoutcounter = INACTIVITYTIMEOUT;;  
+      timeoutcounter = INACTIVITYTIMEOUT;
       // timeout w/no buttons pressed after 3 seconds?
     } else if (!timeoutcounter) {
       //timed out!
@@ -1946,11 +1959,11 @@ void show_volume(void) {
 void set_volume(void) {
   uint8_t mode = SHOW_MENU;
   uint8_t volume;
-  timeoutcounter = INACTIVITYTIMEOUT;;  
+  timeoutcounter = INACTIVITYTIMEOUT;
   volume = eeprom_read_byte((uint8_t *)EE_VOLUME);
   while (1) {
     if (just_pressed || pressed) {
-      timeoutcounter = INACTIVITYTIMEOUT;;  
+      timeoutcounter = INACTIVITYTIMEOUT;
       // timeout w/no buttons pressed after 3 seconds?
     } else if (!timeoutcounter) {
       //timed out!
@@ -1994,11 +2007,11 @@ void show_region(void) {
 
 void set_region(void) {
   uint8_t mode = SHOW_MENU;
-  timeoutcounter = INACTIVITYTIMEOUT;;  
+  timeoutcounter = INACTIVITYTIMEOUT;
   region = eeprom_read_byte((uint8_t *)EE_REGION);
   while (1) {
     if (just_pressed || pressed) {
-      timeoutcounter = INACTIVITYTIMEOUT;;  
+      timeoutcounter = INACTIVITYTIMEOUT;
       // timeout w/no buttons pressed after 3 seconds?
     } else if (!timeoutcounter) {
       //timed out!
@@ -2050,11 +2063,11 @@ void display_num(unsigned char pos, int16_t d, uint8_t hilite) {  // display sig
 #ifdef FEATURE_DRIFTCORR
 void set_driftcorr(void) {
   uint8_t mode = SHOW_MENU;
-  timeoutcounter = INACTIVITYTIMEOUT;;  
+  timeoutcounter = INACTIVITYTIMEOUT;
   drift_corr = eeprom_read_byte((uint8_t *)EE_DRIFTCORR);
   while (1) {
     if (just_pressed || pressed) {
-      timeoutcounter = INACTIVITYTIMEOUT;;  
+      timeoutcounter = INACTIVITYTIMEOUT;
       // timeout w/no buttons pressed after 3 seconds?
     } else if (!timeoutcounter) {
       //timed out!
@@ -2117,10 +2130,10 @@ void show_secsmode(void) {
 
 void set_secsmode(void) {
   uint8_t mode = SHOW_MENU;
-  timeoutcounter = INACTIVITYTIMEOUT;;  
+  timeoutcounter = INACTIVITYTIMEOUT;
   while (1) {
     if (just_pressed || pressed) {
-      timeoutcounter = INACTIVITYTIMEOUT;;  
+      timeoutcounter = INACTIVITYTIMEOUT;
       // timeout w/no buttons pressed after 3 seconds?
     } else if (!timeoutcounter) {
       //timed out!
@@ -2165,12 +2178,12 @@ void set_snoozetime(void) {
   uint8_t mode = SHOW_MENU;
   uint8_t snooze;
 
-  timeoutcounter = INACTIVITYTIMEOUT;;  
+  timeoutcounter = INACTIVITYTIMEOUT;
   snooze = eeprom_read_byte((uint8_t *)EE_SNOOZE);
 
   while (1) {
     if (just_pressed || pressed) {
-      timeoutcounter = INACTIVITYTIMEOUT;;  
+      timeoutcounter = INACTIVITYTIMEOUT;
       // timeout w/no buttons pressed after 3 seconds?
     } else if (!timeoutcounter) {
       //timed out!
@@ -2655,21 +2668,24 @@ void display_time(uint8_t h, uint8_t m, uint8_t s) {
 				display[8] |= (s&1);
 			break;
 		case 9:  // use dp to show GPS status - solid if good signal
-			display_num(7, s, 0);
+			display_num(7, s, 0);  // display seconds (clears dp)
 			if (gpsEnabled) {
-				if (gpsUpdating>0) {
-					display[8] |= 1;  // solid dp indicates gps signal reception
+				if (gpsTimeout<gpsTimeout1) {
+					display[8] |= 1;  // solid dp indicates good gps signal reception
 				}
-				else {
-					display[8] |= (s&1);  // blink decimal point
+//				else if (gpsTimeout<gpsTimeout2) {
+//					display[8] &= 0;  // no dp indicates no gps signal reception
+//				}
+				else if (gpsTimeout>gpsTimeout2) {
+					display[8] |= (s&1);  // no gps signal for a long time - flash decimal point
 				}
 			}
 			break;
 		}
 	 }
-	else
+	else  // DISPLAY_MODE not SHOW_TIME
 #endif
-	 display_num(7, s, 0);
+	 display_num(7, s, 0);  // display seconds
 	
   display[6] = 0;  // blank
 	display_num(4, m, 0);  // minutes
@@ -2929,7 +2945,7 @@ void getGPStime(void) {
 		// this catches corrupt message strings, but also skips a few messages
 		// the GPS emits a GPRMC message once a second, so skipping a message now and then is fine
 		if ((strncmp(gpsDate, gpsPrevDate, 6) == 0) && (strncmp(gpsTime,gpsPrevTime,4) == 0)) {
-			gpsUpdating = gpsTimeoutLimit;  // good signal has been received from GPS
+			gpsTimeout = 0;  // good signal has been received from GPS
   		//Change the time:
 	  	setgpstime(gpsTime);
 		  //Change the date:
@@ -3144,11 +3160,11 @@ void fix_time(void) {
 #ifdef FEATURE_WmDST
 	if (time_s == 0) {  // done once a minute - overkill but it will update for DST when clock is booted or time is adjusted
     if (dst_mode == DST_AUTO)  //Check daylight saving time.
-			setDSToffset(dst_rules);  // set DST offset based on DST rules
-		else if(dst_mode == DST_ON) 
-			dst_offset = 1;  // fixed offset
-		else
-			dst_offset = 0;  // no offset
+			setDSToffset();  // set DST offset based on DST rules
+//		else if(dst_mode == DST_ON) 
+//			dst_offset = 1;  // fixed offset
+//		else
+//			dst_offset = 0;  // no offset
 		if ((time_m == 0) && (time_h == 0))  // Midnight?
 			dst_update = DST_YES;  // Reset DST Update flag at midnight
 	}
@@ -3160,29 +3176,30 @@ void fix_time(void) {
 #ifdef FEATURE_WmDST
 long yearSeconds(uint8_t yr, uint8_t mo, uint8_t da, uint8_t h, uint8_t m, uint8_t s)
 {
-  uint16_t dn = tmDays[(mo-1)]+da;  // # days so far if not leap year
+  long dn = tmDays[(mo-1)]+da;  // # days so far if not leap year
+	yr += 2000;  // need 4 digit year
   if ((yr % 4 == 0 && yr % 100 != 0) || yr % 400 == 0)  // if leap year
     dn ++;  // add 1 day
-  dn = dn*86400 + (uint16_t)h*3600 + (uint16_t)m*60 + s;
+  dn = dn * 86400 + (long)h*3600 + (long)m*60 + s;
   return dn;
 } 
 
-long DSTseconds(uint8_t month, uint8_t doftw, uint8_t n, uint8_t hour)
+long DSTseconds(uint8_t year, uint8_t month, uint8_t doftw, uint8_t week, uint8_t hour)
 {
-	uint16_t dom = mDays[month-1];  // 06nov12/wbp 
-	if ( (date_y%4 == 0) && (month == 2) )
+	uint8_t dom = mDays[month-1];  //06nov12/wbp
+	if ( (month == 2) && (year%4 == 0) )
 		dom ++;  // february has 29 days this year
-	uint8_t dow = dotw(date_y, month, 1);  // DOW for 1st day of month for DST event
+	uint8_t dow = dotw(year, month, 1);  // DOW for 1st day of month for DST event
 	int8_t day = doftw - dow;  // number of days until 1st dotw in given month
-		if (day<1)  day += 7;  // make sure it's positive
+		if (day<1)  day += 7;  // make sure it's positive 
   if (doftw >= dow)
     day = doftw - dow;
   else
     day = doftw + 7 - dow;
-	day = 1 + day + (n-1)*7;  // date of dotw for this year
+	day = 1 + day + (week-1)*7;  // date of dotw for this year
 	while (day > dom)  // handles "last DOW" case
 		day -= 7;
-  return yearSeconds(date_y,month,day,hour,0,0);  // seconds til DST event this year
+  return yearSeconds(year+2000,month,day,hour,0,0);  // seconds til DST event this year
 }
 
 // adjust dst offset and save values in ee prom
@@ -3211,23 +3228,23 @@ void adjDSToffset(uint8_t offset)
 // N is which occurrence of DOTW
 // Current US Rules: March, Sunday, 2nd, 2am, November, Sunday, 1st, 2 am, 1 hour
 // 		3,1,2,2,  11,1,1,2,  1
-void setDSToffset(uint8_t rules[9])
+void setDSToffset()
 {
-	uint8_t month1 = rules[0];
-	uint8_t dotw1 = rules[1];
-	uint8_t n1 = rules[2];  // nth dotw
-	uint8_t hour1 = rules[3];
-	uint8_t month2 = rules[4];
-	uint8_t dotw2 = rules[5];
-	uint8_t n2 = rules[6];
-	uint8_t hour2 = rules[7];
-	uint8_t offset = rules[8];
+	uint8_t month1 = dst_rules[0];
+	uint8_t dotw1 = dst_rules[1];
+	uint8_t n1 = dst_rules[2];  // nth dotw
+	uint8_t hour1 = dst_rules[3];
+	uint8_t month2 = dst_rules[4];
+	uint8_t dotw2 = dst_rules[5];
+	uint8_t n2 = dst_rules[6];
+	uint8_t hour2 = dst_rules[7];
+	uint8_t offset = dst_rules[8];
 	// if current time & date is at or past the first DST rule and before the second, set dst_offset, otherwise reset dst_offset
-  long seconds_start = DSTseconds(month1,dotw1, n1, hour1);  // seconds til DST starts this year
-  long seconds_end = DSTseconds(month2,dotw2, n2, hour2);  // seconds til DST ends this year
-  long seconds_now = yearSeconds(date_y, date_m, date_d, time_h, time_m, time_s);  //time now in seconds this year
-	if (seconds_end>seconds_start) {  // dst end later than start - northern hemisphere
-		if ((seconds_now >= seconds_start) && (seconds_now < seconds_end)) { // spring ahead
+  long dst_start = DSTseconds(date_y, month1, dotw1, n1, hour1);  // seconds til DST starts this year
+  long dst_end = DSTseconds(date_y, month2, dotw2, n2, hour2);  // seconds til DST ends this year
+  long seconds_now = yearSeconds(date_y+2000, date_m, date_d, time_h, time_m, time_s);  //time now in seconds this year
+	if (dst_end>dst_start) {  // dst end later than start - northern hemisphere
+		if ((seconds_now >= dst_start) && (seconds_now < dst_end)) { // spring ahead
 			adjDSToffset(offset);
 		}
 		else { // fall back
@@ -3235,7 +3252,7 @@ void setDSToffset(uint8_t rules[9])
 		}
 	}
 	else {  // dst start later in year than dst end - southern hemisphere
-		if ((seconds_now >= seconds_start) || (seconds_now < seconds_end))  // fall ahead
+		if ((seconds_now >= dst_start) || (seconds_now < dst_end))  // fall ahead
 			adjDSToffset(offset);
 		else  // spring back
 			adjDSToffset(0);
