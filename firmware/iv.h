@@ -108,11 +108,10 @@ THE SOFTWARE.
 #define MAXSNOOZE 600 // 10 minutes
 #define INACTIVITYTIMEOUT 6 // how many seconds we will wait before turning off menus
 
+#define BRITE_MIN 25
 #define BRITE_MAX 90
 #ifdef FEATURE_AUTODIM
-#define BRITE_MIN 10
-#else
-#define BRITE_MIN 30
+#define AUTO_BRITE_MIN 10
 #endif
 #define BRITE_INCREMENT 5
 #define AUTODIM_OFF 0
@@ -125,45 +124,6 @@ THE SOFTWARE.
 #define BEEP_4KHZ 10
 #define BEEP_2KHZ 20
 #define BEEP_1KHZ 40
-
-#define EE_INIT 0
-#define EE_YEAR 1
-#define EE_MONTH 2
-#define EE_DAY 3
-#define EE_HOUR 4
-#define EE_MIN 5
-#define EE_SEC 6
-#define EE_ALARM_HOUR 7 
-#define EE_ALARM_MIN 8
-#define EE_BRIGHT 9  
-#define EE_VOLUME 10
-#define EE_REGION 11
-#define EE_SNOOZE 12
-
-#define EE_ZONE_HOUR 13
-#define EE_ZONE_MIN 14
-
-#define EE_DSTMODE 15
-#define EE_GPSENABLE 16
-
-#define EE_AUTODIM 17
-#define EE_AUTODIMLO 18
-#define EE_AUTODIMHI 19
-
-#define EE_DSTRULE0 20
-#define EE_DSTRULE1 21
-#define EE_DSTRULE2 22
-#define EE_DSTRULE3 23
-#define EE_DSTRULE4 24
-#define EE_DSTRULE5 25
-#define EE_DSTRULE6 26
-#define EE_DSTRULE7 27
-#define EE_DSTRULE8 28
-#define EE_DSTOFFSET 29
-
-#define EE_DRIFTCORR 30
-#define EE_LDBB 31
-#define EE_SECSMODE 32
 
 #define DRIFT_MIN	(-64)
 #define DRIFT_MAX	(64)

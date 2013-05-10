@@ -1,8 +1,13 @@
 # **Ice Tube Clock firmware with GPS & working Auto DST support** #
 
-Latest update May 9, 2013 - William Phelps - wm (at) usa.net 
+Latest update May 10, 2013 - William Phelps - wm (at) usa.net 
  
 ## **Includes the following modifications:** ##
+
+**Updates in v130510wm**  
+10may13 - change EE read/write to use ee_update_byte & compiler ee mapping  
+NOTE: run "makefile flash" or "makefile eeprom" at least once to install this update!
+Use "makefile program" for subsequent updates unless EE content is changed in source
 
 **Updates in v130509wm**  
 09may13 - fix silly bug in auto dst

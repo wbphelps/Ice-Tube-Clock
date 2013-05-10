@@ -208,6 +208,8 @@ ALL_ASFLAGS = -mmcu=$(MCU) -I. -x assembler-with-cpp $(ASFLAGS)
 all: begin gccversion sizebefore $(TARGET).elf $(TARGET).hex $(TARGET).eep \
 	$(TARGET).lss $(TARGET).sym sizeafter finished end
 
+hex: $(TARGET).hex $(TARGET).eep
+
 full: $(TARGET).hex $(TARGET).eep
 	$(AVRDUDE) $(AVRDUDE_FLAGS) $(FUSES)
 	$(AVRDUDE) $(AVRDUDE_FLAGS) $(AVRDUDE_BFLAG) $(AVRDUDE_WRITE_FLASH)
@@ -216,6 +218,12 @@ full: $(TARGET).hex $(TARGET).eep
 # Program the device.  
 program: $(TARGET).hex $(TARGET).eep
 	$(AVRDUDE) $(AVRDUDE_FLAGS) $(AVRDUDE_BFLAG) $(AVRDUDE_WRITE_FLASH)
+
+flash: $(TARGET).hex $(TARGET).eep
+	$(AVRDUDE) $(AVRDUDE_FLAGS) $(AVRDUDE_BFLAG) $(AVRDUDE_WRITE_FLASH) $(AVRDUDE_WRITE_EEPROM)
+
+eeprom: $(TARGET).hex $(TARGET).eep
+	$(AVRDUDE) $(AVRDUDE_FLAGS) $(AVRDUDE_BFLAG) $(AVRDUDE_WRITE_EEPROM)
 
 fuses: 
 	$(AVRDUDE) $(AVRDUDE_FLAGS) $(AVRDUDE_BFLAG) $(FUSES)
@@ -331,10 +339,6 @@ extcoff: $(TARGET).elf
 	@echo
 	@echo $(MSG_ASSEMBLING) $<
 	$(CC) -c $(ALL_ASFLAGS) $< -o $@
-
-
-
-
 
 
 # Target: clean project.
