@@ -120,6 +120,48 @@ THE SOFTWARE.
 #define PHOTOCELL_DARK 1010
 #define PHOTOCELL_LIGHT 100  // wbp (was 500)
 
+// EE Memory addresses
+#define EE_INIT 0
+#define EE_YEAR 1
+#define EE_MONTH 2
+#define EE_DAY 3
+#define EE_HOUR 4
+#define EE_MIN 5
+#define EE_SEC 6
+#define EE_ALARM_HOUR 7 
+#define EE_ALARM_MIN 8
+#define EE_SNOOZE 9
+#define EE_BRIGHT 10  
+#define EE_VOLUME 11
+#define EE_REGION 12
+
+#define EE_ZONE_HOUR 13
+#define EE_ZONE_MIN 14
+
+#define EE_DSTMODE 15
+#define EE_GPSENABLE 16
+
+#define EE_AUTODIM 17
+#define EE_AUTODIMLO 18
+#define EE_AUTODIMHI 19
+
+#define EE_DST_RULE0 20
+#define EE_DST_RULE1 21
+#define EE_DST_RULE2 22
+#define EE_DST_RULE3 23
+#define EE_DST_RULE4 24
+#define EE_DST_RULE5 25
+#define EE_DST_RULE6 26
+#define EE_DST_RULE7 27
+#define EE_DST_RULE8 28
+#define EE_DSTOFFSET 29
+
+#define EE_DRIFTCORR 30
+#define EE_LDBB 31
+#define EE_SECSMODE 32
+
+#define EE_TEST 33
+
 #define BEEP_8KHZ 5
 #define BEEP_4KHZ 10
 #define BEEP_2KHZ 20
@@ -157,7 +199,8 @@ void display_alarm(uint8_t h, uint8_t m);
 void display_timezone(int8_t h, uint8_t m);
 void display_brt(uint8_t brightness);
 void display_dstrule(uint8_t i);
-void display_num(unsigned char pos, int16_t d, uint8_t hilite);
+//void display_num(unsigned char pos, int16_t d, uint8_t hilite);
+void display_num(unsigned char pos, int8_t d, uint8_t hilite);
 void display_value(unsigned char, unsigned char n, uint16_t val);
 
 void set_time(void);
@@ -206,7 +249,8 @@ void set_timezone(void);
 #ifdef FEATURE_WmDST
 long Seconds(uint8_t yr, uint8_t mo, uint8_t da, uint8_t h, uint8_t m, uint8_t s);
 void setDSToffset(void);
-void save_dstrules(uint8_t mods[]);
+//void save_dstrules(uint8_t mods[]);
+void save_dstrules(void);
 #endif
 
 void beep(uint16_t freq, uint8_t times);
