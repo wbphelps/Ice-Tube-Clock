@@ -314,6 +314,22 @@ enum dispmodes {
 	N_MODES		// Number of Menu "modes", must be last in this enum
 };
 
+#ifdef FEATURE_SECSMODE
+enum secsmodes {
+	SECS_FULL = 0,
+	SECS_FULLGPS,
+	SECS_DIAL1,
+	SECS_DIAL2,
+	SECS_DIAL3,
+	SECS_DIAL4,
+	SECS_AMPM,
+	SECS_AMPMDOT,
+	SECS_NONE,
+	SECS_NONEDOT,
+	SECS_NMODES
+};
+#endif
+
 #define NONE 99
 #define SHOW_SNOOZE 98  // not menu item, used to block time display
 

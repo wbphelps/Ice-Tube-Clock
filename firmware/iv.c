@@ -1,8 +1,9 @@
 /***************************************************************************
- Ice Tube Clock with GPS & Auto DST firmware Nov 6, 2011
+ Ice Tube Clock with GPS & Auto DST firmware June 2013
  (c) 2009 Limor Fried / Adafruit Industries
  (c) 2013 William B Phelps
 
+ 21jun13 - display "alrm off"
  17jun13 - revert to old eeprom method
  16jun13 - if dst mode not Auto, don't call setdstoffset when rules changed or time set
  10may13 - change EE read/write to use ee_update_byte & compiler ee mapping
@@ -88,7 +89,7 @@ THE SOFTWARE.
 static int8_t drift_corr = 0;  /* Drift correction applied each hour */
 #endif
 
-char version[8] = "130617wm";  // program timestamp/version
+char version[8] = "130621wm";  // program timestamp/version
 
 uint8_t region = REGION_US;
 
@@ -382,7 +383,7 @@ SIGNAL (TIMER0_OVF_vect) {  // 328p & 168
 #endif
 
 #ifdef FEATURE_SECSMODE
-	if (secsmode == 4 && displaymode == SHOW_TIME)  {
+	if (secsmode == SECS_DIAL4 && displaymode == SHOW_TIME)  {
 		secsdiv++;
 		if (secsdiv > SECS_DIVIDER) {
 			secsdiv = 0;
@@ -594,7 +595,7 @@ SIGNAL (TIMER2_OVF_vect) {
   if (displaymode == SHOW_TIME) {
     if (!timeknown && (time_s % 2)) {  // if time unknown, blink the display
       display_str("        ");
-    } else if ( gpsEnabled && (gpsTimeout>gpsTimeout2) && (secsmode!=9) && (time_s % 2) ) {  // if no data from gps
+    } else if ( gpsEnabled && (gpsTimeout>gpsTimeout2) && (secsmode!=SECS_FULLGPS) && (time_s % 2) ) {  // if no data from gps
       display_str(" no gps ");
     } else {
       display_time(time_h, time_m, time_s);
@@ -2179,16 +2180,16 @@ void set_driftcorr(void) {
 // modes: FULL, DIAL1, DIAL2, AMPM (?), NONE
 void show_secsmode(void) {
 	switch (secsmode) {
-		case 0: display_str(" full   "); break;
-		case 1: display_str(" dial1  "); break;  // LF pattern, 6 steps, 1/sec
-		case 2: display_str(" dial2  "); break;  // outer segments only, 8 steps, 1/8 minute interval
-		case 3: display_str(" dial3  "); break;  // "cup" pattern, 12 steps, 5 second interval
-		case 4: display_str(" dial4  "); break;  // fast radial pattern, 6 steps, 1/6 second interval
-		case 5: display_str(" am-pm  "); break;
-		case 6: display_str(" am-pm. "); display[7] |= 0x1; break;
-		case 7: display_str(" none   "); break;
-		case 8: display_str(" none.  "); display[6] |= 0x1; break;
-		case 9: display_str(" fullgps"); display[8] |= 0x1; break;  // full with GPS update shown
+		case SECS_FULL: display_str(" full   "); break;
+		case SECS_FULLGPS: display_str(" fullgps"); display[8] |= 0x1; break;  // full with GPS status as right most decimal
+		case SECS_DIAL1: display_str(" dial1  "); break;  // LF pattern, 6 steps, 1/sec
+		case SECS_DIAL2: display_str(" dial2  "); break;  // outer segments only, 8 steps, 1/8 minute interval
+		case SECS_DIAL3: display_str(" dial3  "); break;  // "cup" pattern, 12 steps, 5 second interval
+		case SECS_DIAL4: display_str(" dial4  "); break;  // fast radial pattern, 6 steps, 1/6 second interval
+		case SECS_AMPM: display_str(" am-pm  "); break;
+		case SECS_AMPMDOT: display_str(" am-pm. "); display[7] |= 0x1; break;
+		case SECS_NONE: display_str(" none   "); break;
+		case SECS_NONEDOT: display_str(" none.  "); display[6] |= 0x1; break;
 	}
 }
 
@@ -2224,7 +2225,7 @@ void set_secsmode(void) {
       just_pressed = 0;
       if (mode == SET_SECSMODE) {
         secsmode ++;
-				if (secsmode > 9)  // 06may13/wbp
+				if (secsmode >= SECS_NMODES)  // 06may13/wbp
 					secsmode = 0;
 				show_secsmode();
       }
@@ -2385,10 +2386,10 @@ void setalarmstate(void) {
         // show the status on the VFD tube
         display_str("alarm on");
         displaymode = NONE;  // block time display
-        delayms(1500);
+        delayms(1000);
         // show the current alarm time set
         display_alarm(alarm_h, alarm_m);
-        delayms(1500);
+        delayms(1000);
         // after a second, go back to clock mode
         displaymode = SHOW_TIME;
       }
@@ -2405,7 +2406,13 @@ void setalarmstate(void) {
 				alarming = 0;
 				TCCR1B &= ~_BV(CS11); // turn it off!
 				PORTB |= _BV(SPK1) | _BV(SPK2);
-      } 
+      }
+    // show the status on the VFD tube
+    display_str("alrm off");
+    displaymode = NONE;  // block time display
+    delayms(1000);
+    // after a second, go back to clock mode
+    displaymode = SHOW_TIME;
     }
   }
 }
@@ -2694,49 +2701,10 @@ void display_time(uint8_t h, uint8_t m, uint8_t s) {
 	if (displaymode == SHOW_TIME)  {  // secsmode only active if displaymode is SHOW_TIME
 	uint16_t ss;
 	 switch (secsmode)  {
-		case 0:  // secs
+		case SECS_FULL:  // full
 			display_num(7, s, 0);
 			break;
-		case 1:   // dial 1 - by Larry Frank
-			ss = s%6*2;  // 6 steps, 1 every second
-			display[7] = pgm_read_byte(dialsegs1_p + ss + 1);
-			display[8] = pgm_read_byte(dialsegs1_p + ss);
-			break;
-		case 2:  // dial 2 - outer bars, with blink
-//			ss = s*10/75*2;  // 8 steps, 1 every 7.5 secs
-			ss = s%10*2;  // 10 steps, 1 every second
-			display[7] = pgm_read_byte(dialsegs2_p + ss + 1);
-			display[8] = pgm_read_byte(dialsegs2_p + ss);
-			if ((s&1) == 1)  { // blink center bar
-				display[7] |= 0x02;  // bar is bit 2
-				display[8] |= 0x02;  // bar is bit 2
-			}
-			break;
-		case 3:  // dial 3 - snake pattern
-			ss = s%12*2;  // 12 steps, 1 a second
-			display[7] = pgm_read_byte(dialsegs3_p + ss + 1);
-			display[8] = pgm_read_byte(dialsegs3_p + ss);
-			break;
-//		case 4:  // dial 4 is a fast pattern handled elsewhere
-//			break;
-		case 5:   // AM/PM
-		case 6:   // AM/PM b
-			if (h<12)
-				display[7] = get_alpha('a');
-			else
-				display[7] = get_alpha('p');
-			display[8] = get_alpha('m');
-			if (secsmode == 6)  // blink decimal point
-				display[8] |= (s&1);
-			break;
-		case 7:   // none
-		case 8:   // none b
-			display[7] = 0;
-			display[8] = 0;
-			if (secsmode == 8)  // blink decimal point
-				display[8] |= (s&1);
-			break;
-		case 9:  // use dp to show GPS status - solid if good signal
+		case SECS_FULLGPS:  // full gps - use dp to show GPS status - solid if good signal
 			display_num(7, s, 0);  // display seconds (clears dp)
 			if (gpsEnabled) {
 				if (gpsTimeout<gpsTimeout1) {
@@ -2749,6 +2717,45 @@ void display_time(uint8_t h, uint8_t m, uint8_t s) {
 					display[8] |= (s&1);  // no gps signal for a long time - flash decimal point
 				}
 			}
+			break;
+		case SECS_DIAL1:   // dial 1 - by Larry Frank
+			ss = s%6*2;  // 6 steps, 1 every second
+			display[7] = pgm_read_byte(dialsegs1_p + ss + 1);
+			display[8] = pgm_read_byte(dialsegs1_p + ss);
+			break;
+		case SECS_DIAL2:  // dial 2 - outer bars, with blink
+//			ss = s*10/75*2;  // 8 steps, 1 every 7.5 secs
+			ss = s%10*2;  // 10 steps, 1 every second
+			display[7] = pgm_read_byte(dialsegs2_p + ss + 1);
+			display[8] = pgm_read_byte(dialsegs2_p + ss);
+			if ((s&1) == 1)  { // blink center bar
+				display[7] |= 0x02;  // bar is bit 2
+				display[8] |= 0x02;  // bar is bit 2
+			}
+			break;
+		case SECS_DIAL3:  // dial 3 - snake pattern
+			ss = s%12*2;  // 12 steps, 1 a second
+			display[7] = pgm_read_byte(dialsegs3_p + ss + 1);
+			display[8] = pgm_read_byte(dialsegs3_p + ss);
+			break;
+//		case SECS_DIAL4:  // dial 4 is a fast pattern handled elsewhere
+//			break;
+		case SECS_AMPM:   // AM/PM
+		case SECS_AMPMDOT:   // AM/PM blink
+			if (h<12)
+				display[7] = get_alpha('a');
+			else
+				display[7] = get_alpha('p');
+			display[8] = get_alpha('m');
+			if (secsmode == SECS_AMPMDOT)  // blink decimal point
+				display[8] |= (s&1);
+			break;
+		case SECS_NONE:   // none
+		case SECS_NONEDOT:   // none blink
+			display[7] = 0;
+			display[8] = 0;
+			if (secsmode == SECS_NONEDOT)  // blink decimal point
+				display[8] |= (s&1);
 			break;
 		}
 	 }
