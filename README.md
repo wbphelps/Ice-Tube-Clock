@@ -1,8 +1,13 @@
 # **Ice Tube Clock firmware with GPS & working Auto DST support** #
 
-Latest update May 10, 2013 - William Phelps - wm (at) usa.net 
+Latest update Jun 21, 2013 - William Phelps - wm (at) usa.net 
  
 ## **Includes the following modifications:** ##
+
+**Updates in v130621wm**  
+21jun13 - display "alrm off" when alarm switched off
+17jun13 - revert to old eeprom method (problems with new method)
+16jun13 - if dst mode not Auto, don't call setdstoffset when rules changed or time set
 
 **Updates in v130510wm**  
 10may13 - change EE read/write to use ee_update_byte & compiler ee mapping  
