@@ -3,6 +3,7 @@
  (c) 2009 Limor Fried / Adafruit Industries
  (c) 2013 William B Phelps
 
+ 29dec13 - put EE variables in single structure 
  21jun13 - display "alrm off"
  17jun13 - revert to old eeprom method
  16jun13 - if dst mode not Auto, don't call setdstoffset when rules changed or time set
@@ -86,26 +87,50 @@ THE SOFTWARE.
 
 #ifdef FEATURE_DRIFTCORR
 #define DRIFT_BASELINE	127  // OCR2A Baseline (uncorrected)
-static int8_t drift_corr = 0;  /* Drift correction applied each hour */
+///static int8_t drift_corr = 0;  /* Drift correction applied each hour */
 #endif
 
-char version[8] = "130621wm";  // program timestamp/version
+char version[8] = "131229wm";  // program timestamp/version
 
-uint8_t region = REGION_US;
+// global variables saved in EE memory...
+struct __globals globals = {
+	EE_CHECK,
+	13, 12, 29, // year, month, day
+	0, 0, 0, // hour, min, sec
+	7, 0, // alarm hour, min
+	50, // brightness
+	BRITE_MIN, BRITE_MAX, // brightness limits
+	0, // volume
+	REGION_US, // region - 12 hour mode
+	10, // snooze time
+	0, // gps enabled
+	-8, 0, // tz hour, minute
+	0, // Auto dim
+	15, 90, // Auto dim lo, hi
+	0, // dst mode
+	{3, 1, 2, 2, 11, 1, 1, 2, 1}, // DST rules
+	1, // dst offset
+	0, // drift correction
+	0, // last digit brightness boost
+	0, // seconds mode
+	EE_CHECK,
+};
+
+//uint8_t region = REGION_US;
 
 // These variables store the current time.
 volatile int8_t time_s, time_m, time_h;
 // ... and current date
-volatile uint8_t date_m=03, date_d=14, date_y = 47;
+//volatile uint8_t date_m=03, date_d=14, date_y = 47;
 
 // how loud is the speaker supposed to be?
-volatile uint8_t volume;
+//volatile uint8_t volume;
 
-volatile uint8_t bright_level;  // brightness set by user if autodim is off
+//volatile uint8_t bright_level;  // brightness set by user if autodim is off
 #ifdef FEATURE_AUTODIM
-volatile uint8_t autodim_lo;
-volatile uint8_t autodim_hi;
-volatile uint8_t autodim = 0;
+//volatile uint8_t autodim_lo;
+//volatile uint8_t autodim_hi;
+//volatile uint8_t autodim = 0;
 volatile uint16_t dimmer_adc;  // last result from ADC
 volatile uint16_t dimmer_lvl;  // current dimmer level
 #endif
@@ -122,7 +147,7 @@ volatile uint16_t dimmer_lvl;  // current dimmer level
  *     -10- o01  -10- o01
  */
 #ifdef FEATURE_SECSMODE
-volatile uint8_t secsmode = 0;
+//volatile uint8_t secsmode = 0;
 uint8_t secsdiv = 0;
 uint8_t secscnt = 0;
 #define SECS_DIVIDER 150  // set freq to 1/6 second.  secsmdiv is incremented at 900 hz
@@ -161,10 +186,10 @@ volatile uint8_t dateknown = 0;
 volatile uint8_t restored = 0;
 
 #ifdef FEATURE_WmDST
-volatile uint8_t dst_mode;
-volatile uint8_t dst_offset = 0;  // current DST offset, also used by gpssettime
+///volatile uint8_t dst_mode;
+///volatile uint8_t dst_offset = 0;  // current DST offset, also used by gpssettime
 volatile uint8_t dst_update = 0;  // DST Update allowed now? (Reset at midnight)
-uint8_t dst_rules[9]={3,1,2,2,11,1,1,2,1};   // initial values from US DST rules as of 2011
+///uint8_t dst_rules[9]={3,1,2,2,11,1,1,2,1};   // initial values from US DST rules as of 2011
 // DST Rules: Start(month, dotw, n, hour), End(month, dotw, n, hour), Offset
 // DOTW is Day of the Week, 1=Sunday, 7=Saturday
 // N is which occurrence of DOTW
@@ -178,7 +203,7 @@ static const uint16_t tmDays[]={0,31,59,90,120,151,181,212,243,273,304,334}; // 
 #ifdef FEATURE_GPS
 // String buffer for processing GPS data:
 char gpsBuffer[GPSBUFFERSIZE];
-volatile uint8_t gpsEnabled = 0;
+//volatile uint8_t gpsEnabled = 0;
 #define gpsTimeout1 5  // 5 seconds until we turn off the gps signal dp
 #define gpsTimeout2 15  // 15 seconds until we display the "no gps" message or start flashing the dp
 uint8_t gpsTimeout = 0;  // how long since we received valid GPS data? (in seconds)
@@ -196,17 +221,17 @@ char gpsPrevDate[7] = "000000";
 #endif
 
 // Variables for the timezone offset if using GPS.
-int8_t intTimeZoneHour = -8;  //PST
-uint8_t intTimeZoneMin = 0;
+//int8_t intTimeZoneHour = -8;  //PST
+//uint8_t intTimeZoneMin = 0;
 
 // Our display buffer, which is updated to show the time/date/etc
 // and is multiplexed onto the tube
 uint8_t display[DISPLAYSIZE]; // stores segments, not values!
 uint8_t currdigit = 0;        // which digit we are currently multiplexing
 uint8_t lastdigit = DISPLAYSIZE-1;  // last digit before starting over
-#ifdef FEATURE_LDBB
-volatile uint8_t ldbb = 0;  // Last Digit Brightness Boost
-#endif
+//#ifdef FEATURE_LDBB
+//volatile uint8_t ldbb = 0;  // Last Digit Brightness Boost
+//#endif
 
 // This table allow us to index between what digit we want to light up
 // and what the pin number is on the MAX6921 see the .h for values.
@@ -238,49 +263,6 @@ uint16_t alarmdiv = 0;
 
 // How long we have been snoozing
 uint16_t snoozetimer = 0;
-
-// Settings saved to eeprom
-// uint8_t EEMEM EE_INIT = 1;
-
-// uint8_t EEMEM EE_YEAR = 13;
-// uint8_t EEMEM EE_MONTH = 6;
-// uint8_t EEMEM EE_DAY = 17;  // june 17, 2013
-// uint8_t EEMEM EE_HOUR = 0;
-// uint8_t EEMEM EE_MIN = 0;
-// uint8_t EEMEM EE_SEC = 0;
-
-// uint8_t EEMEM EE_ALARM_HOUR = 7;
-// uint8_t EEMEM EE_ALARM_MIN = 0;  // Alarm 07:00
-// uint8_t EEMEM EE_SNOOZE = 10;  // default 10 minute Snooze
-
-// uint8_t EEMEM EE_BRIGHT = 65;  //Brightness level = 65
-// uint8_t EEMEM EE_VOLUME = 0;  //Volume low
-
-// uint8_t EEMEM EE_REGION = REGION_US;  // 12 hour mode
-// uint8_t EEMEM EE_ZONE_HOUR = 4;  // Time Zone hour (GPS) (offset by 12 to make positive)
-// uint8_t EEMEM EE_ZONE_MIN = 0;  // Time Zone minute (GPS)
-// uint8_t EEMEM EE_DSTMODE = 0;  // No Daylight Saving Time
-// uint8_t EEMEM EE_GPSENABLE = 0;  // GPS disabled
-// uint8_t EEMEM EE_AUTODIM = 0;  // Autodim disabled
-// uint8_t EEMEM EE_AUTODIMLO = 20;  // Auto Brightness Level Low
-// uint8_t EEMEM EE_AUTODIMHI = 85;  // Auto Brightness Level High
-
-// uint8_t EEMEM EE_DST_RULE0 = 3;  // DST start month
-// uint8_t EEMEM EE_DST_RULE1 = 1;  // DST start dotw
-// uint8_t EEMEM EE_DST_RULE2 = 2;  // DST start week
-// uint8_t EEMEM EE_DST_RULE3 = 2;  // DST start hour
-// uint8_t EEMEM EE_DST_RULE4 = 11; // DST end month
-// uint8_t EEMEM EE_DST_RULE5 = 1;  // DST end dotw
-// uint8_t EEMEM EE_DST_RULE6 = 1;  // DST end week
-// uint8_t EEMEM EE_DST_RULE7 = 2;  // DST end hour
-// uint8_t EEMEM EE_DST_RULE8 = 1;  // DST offset
-
-// uint8_t EEMEM EE_DSTOFFSET = 0;  // DST Offset
-// uint8_t EEMEM EE_SECSMODE = 0;  // Seconds display mode
-// uint8_t EEMEM EE_DRIFTCORR = 0;  // Drift correction
-// uint8_t EEMEM EE_LDBB = 0;  // Last Digit Brightness Boost
-
-// uint8_t EEMEM EE_TEST = 42;  // last item...
 
 // We have a non-blocking delay function, milliseconds is updated by
 // an interrupt
@@ -324,12 +306,23 @@ void _delay_loop_2(uint16_t __count)
 	);
 }
 
+// save copy of globals structure in EE memory
+void save_globals(void)
+{
+	for (unsigned int p=0; p<sizeof(globals); p++) {
+		uint8_t b1 = eeprom_read_byte((uint8_t *)EE_globals + p);
+		if (b1 != *((char *) &globals + p))
+			eeprom_write_byte((uint8_t *)EE_globals + p, *((char*)&globals + p));
+	}
+}
+
 // When the alarm is going off, pressing a button turns on snooze mode
 // this sets the snoozetimer off in MAXSNOOZE seconds - which turns on
 // the alarm again
 void setsnooze(void) {
 #ifdef FEATURE_SETSNOOZE
-  snoozetimer = eeprom_read_byte((uint8_t *)EE_SNOOZE);
+///  snoozetimer = eeprom_read_byte((uint8_t *)EE_SNOOZE);
+  snoozetimer = globals.snooze;
   snoozetimer *= 60; // convert minutes to seconds
 #else
   snoozetimer = MAXSNOOZE;
@@ -375,7 +368,7 @@ SIGNAL (TIMER0_OVF_vect) {  // 328p & 168
 	// currdigit is allowed to go past the end of display bytes.
 	// setdisplay will limit the max index value
 	// this has the effect of displaying the last digit multiple times
-  if (currdigit > lastdigit+ldbb)  // hack to display last digit twice - wbp
+  if (currdigit > lastdigit+globals.ldbb)  // hack to display last digit twice - wbp
     currdigit = 0;  // start over with first digit
 #else
   if (currdigit > lastdigit)  // hack to display last digit twice - wbp
@@ -383,7 +376,7 @@ SIGNAL (TIMER0_OVF_vect) {  // 328p & 168
 #endif
 
 #ifdef FEATURE_SECSMODE
-	if (secsmode == SECS_DIAL4 && displaymode == SHOW_TIME)  {
+	if (globals.secsmode == SECS_DIAL4 && displaymode == SHOW_TIME)  {
 		secsdiv++;
 		if (secsdiv > SECS_DIVIDER) {
 			secsdiv = 0;
@@ -575,7 +568,7 @@ SIGNAL (TIMER2_OVF_vect) {
 //	OCR2A = DRIFT_BASELINE + drift_corr;  // always apply it (testing) - !!!
   if (time_m == 0) {
     if (time_s == 0)
-			OCR2A = DRIFT_BASELINE + drift_corr;
+			OCR2A = DRIFT_BASELINE + globals.drift_corr;
     else if (time_s == 1)
 			OCR2A = DRIFT_BASELINE;
     if (time_s <= 1) {
@@ -595,7 +588,7 @@ SIGNAL (TIMER2_OVF_vect) {
   if (displaymode == SHOW_TIME) {
     if (!timeknown && (time_s % 2)) {  // if time unknown, blink the display
       display_str("        ");
-    } else if ( gpsEnabled && (gpsTimeout>gpsTimeout2) && (secsmode!=SECS_FULLGPS) && (time_s % 2) ) {  // if no data from gps
+    } else if ( globals.gps_enabled && (gpsTimeout>gpsTimeout2) && (globals.secsmode!=SECS_FULLGPS) && (time_s % 2) ) {  // if no data from gps
       display_str(" no gps ");
     } else {
       display_time(time_h, time_m, time_s);
@@ -656,20 +649,25 @@ SIGNAL(ANALOG_COMP_vect) {  // 328p & 168
       BOOST_PORT &= ~_BV(BOOST); // pull boost fet low
       SPCR  &= ~_BV(SPE); // turn off spi
       if (timeknown) {  // if valid values for time, save in ee  (17nov11/wbp)
-				eeprom_update_byte((uint8_t *)EE_HOUR, time_h);
-				eeprom_update_byte((uint8_t *)EE_MIN, time_m);
-				eeprom_update_byte((uint8_t *)EE_SEC, time_s);
+///				eeprom_update_byte((uint8_t *)EE_HOUR, time_h);
+//				eeprom_update_byte((uint8_t *)EE_MIN, time_m);
+///				eeprom_update_byte((uint8_t *)EE_SEC, time_s);
+				globals.time_h = time_h;
+				globals.time_m = time_m;
+				globals.time_s = time_s;
+				save_globals();
 				beep(2000,1);
 			}
 			if (dateknown) {  // save date if known
-				eeprom_update_byte((uint8_t *)EE_YEAR, date_y);    
-				eeprom_update_byte((uint8_t *)EE_MONTH, date_m);    
-				eeprom_update_byte((uint8_t *)EE_DAY, date_d);    
+//				eeprom_update_byte((uint8_t *)EE_YEAR, date_y);    
+//				eeprom_update_byte((uint8_t *)EE_MONTH, date_m);    
+//				eeprom_update_byte((uint8_t *)EE_DAY, date_d);    
+				save_globals();
 				beep(2000,2);
       }
 //      DEBUGP("z");
       TCCR0B = 0; // no boost
-      volume = 0; // low power buzzer
+//      volume = 0; // low power buzzer
       PCICR = 0;  // ignore buttons
 #ifdef FEATURE_AUTODIM
       DIMMER_POWER_PORT &= ~_BV(DIMMER_POWER_PIN); // no power to photoresistor
@@ -691,42 +689,54 @@ SIGNAL(ANALOG_COMP_vect) {  // 328p & 168
 
 /*********************** Main app **********/
 void initeeprom(void) {
-  if(eeprom_read_byte((uint8_t *)EE_INIT)!=1)
-  {
-    eeprom_write_byte((uint8_t*)EE_INIT, 1);  //Initialize one time.
-    eeprom_write_byte((uint8_t*)EE_YEAR, 13);
-    eeprom_write_byte((uint8_t*)EE_MONTH, 6);
-    eeprom_write_byte((uint8_t*)EE_DAY, 15);   //Jan 1, 2000
-    eeprom_write_byte((uint8_t*)EE_HOUR, 0);
-    eeprom_write_byte((uint8_t*)EE_MIN, 0);
-    eeprom_write_byte((uint8_t*)EE_SEC, 0);   //00:00:00 (24Hour), 12:00:00 AM (12Hour)
-    eeprom_write_byte((uint8_t*)EE_ALARM_HOUR, 10);
-    eeprom_write_byte((uint8_t*)EE_ALARM_MIN, 0);   //Alarm 10:00:00/10:00:00AM
-    eeprom_write_byte((uint8_t*)EE_BRIGHT, 50);     //Brightness Level = 50
-    eeprom_write_byte((uint8_t*)EE_VOLUME, 0);      //Volume Low
-    eeprom_write_byte((uint8_t*)EE_REGION, REGION_US);  //12 Hour mode
-    eeprom_write_byte((uint8_t*)EE_SNOOZE, 10);     //10 Minute Snooze. (If compiled in.)
-    eeprom_write_byte((uint8_t*)EE_ZONE_HOUR, 12-8);     //Zone Hour (GPS) +12
-    eeprom_write_byte((uint8_t*)EE_ZONE_MIN, 0);     //Zone Minute (GPS)
-    eeprom_write_byte((uint8_t*)EE_DSTMODE, 0);      //No Daylight Saving Time
-    eeprom_write_byte((uint8_t*)EE_GPSENABLE, 0);    //GPS disabled
-    eeprom_write_byte((uint8_t*)EE_AUTODIMLO, BRITE_MIN);     //Brightness Level Low = 30
-    eeprom_write_byte((uint8_t*)EE_AUTODIMHI, BRITE_MAX);     //Brightness Level High = 90
-    eeprom_write_byte((uint8_t*)EE_AUTODIM, 0);   //AUTODIM disabled
-//uint8_t dst_rules[9]={3,1,2,2,11,1,1,2,1};  
-		uint8_t i;
-		for (i = 0; i < 9; i++) {
-			eeprom_write_byte((uint8_t*)EE_DST_RULE0+i, dst_rules[i]);   //DST RULE 
+	uint8_t ee_check1 = eeprom_read_byte((uint8_t *)EE_globals + (&globals.EEcheck1-&globals.EEcheck1));
+	uint8_t ee_check2 = eeprom_read_byte((uint8_t *)EE_globals + (&globals.EEcheck2-&globals.EEcheck1));
+	if ((ee_check1!=EE_CHECK) || (ee_check2!=EE_CHECK)) { // has EE been initialized?
+		for (unsigned int p=0; p<sizeof(globals); p++) { // copy globals structure to EE memory
+			eeprom_write_byte((uint8_t *)EE_globals + p, *((char*)&globals + p));
 		}
-		eeprom_write_byte((uint8_t *)EE_DSTOFFSET, 0);  // DST OFFSET
-    eeprom_write_byte((uint8_t*)EE_SECSMODE, 0);   // Seconds Mode
-    eeprom_write_byte((uint8_t*)EE_DRIFTCORR, 0);   // Drift Correction
-    eeprom_write_byte((uint8_t*)EE_LDBB, 0);   //Last Digit Brightness Boost
-    
-    eeprom_write_byte((uint8_t*)EE_TEST, 42);  //In memory of Douglas Adams
-
     beep(3000,2);                                   //And acknowledge EEPROM written.
-  }
+	}
+	else { // read globals from EE
+		for (unsigned int p=0; p<sizeof(globals); p++) // read gloabls from EE
+			*((char*)&globals + p) = eeprom_read_byte((uint8_t *)EE_globals + p);
+	}
+  // if(eeprom_read_byte((uint8_t *)EE_INIT)!=1)
+  // {
+    // eeprom_write_byte((uint8_t*)EE_INIT, 1);  //Initialize one time.
+    // eeprom_write_byte((uint8_t*)EE_YEAR, 13);
+    // eeprom_write_byte((uint8_t*)EE_MONTH, 6);
+    // eeprom_write_byte((uint8_t*)EE_DAY, 15);   //Jan 1, 2000
+    // eeprom_write_byte((uint8_t*)EE_HOUR, 0);
+    // eeprom_write_byte((uint8_t*)EE_MIN, 0);
+    // eeprom_write_byte((uint8_t*)EE_SEC, 0);   //00:00:00 (24Hour), 12:00:00 AM (12Hour)
+    // eeprom_write_byte((uint8_t*)EE_ALARM_HOUR, 10);
+    // eeprom_write_byte((uint8_t*)EE_ALARM_MIN, 0);   //Alarm 10:00:00/10:00:00AM
+    // eeprom_write_byte((uint8_t*)EE_BRIGHT, 50);     //Brightness Level = 50
+    // eeprom_write_byte((uint8_t*)EE_VOLUME, 0);      //Volume Low
+    // eeprom_write_byte((uint8_t*)EE_REGION, REGION_US);  //12 Hour mode
+    // eeprom_write_byte((uint8_t*)EE_SNOOZE, 10);     //10 Minute Snooze. (If compiled in.)
+    // eeprom_write_byte((uint8_t*)EE_ZONE_HOUR, 12-8);     //Zone Hour (GPS) +12
+    // eeprom_write_byte((uint8_t*)EE_ZONE_MIN, 0);     //Zone Minute (GPS)
+    // eeprom_write_byte((uint8_t*)EE_DSTMODE, 0);      //No Daylight Saving Time
+    // eeprom_write_byte((uint8_t*)EE_GPSENABLE, 0);    //GPS disabled
+    // eeprom_write_byte((uint8_t*)EE_AUTODIMLO, BRITE_MIN);     //Brightness Level Low = 30
+    // eeprom_write_byte((uint8_t*)EE_AUTODIMHI, BRITE_MAX);     //Brightness Level High = 90
+    // eeprom_write_byte((uint8_t*)EE_AUTODIM, 0);   //AUTODIM disabled
+// //uint8_t dst_rules[9]={3,1,2,2,11,1,1,2,1};  
+		// uint8_t i;
+		// for (i = 0; i < 9; i++) {
+			// eeprom_write_byte((uint8_t*)EE_DST_RULE0+i, dst_rules[i]);   //DST RULE 
+		// }
+		// eeprom_write_byte((uint8_t *)EE_DSTOFFSET, 0);  // DST OFFSET
+    // eeprom_write_byte((uint8_t*)EE_SECSMODE, 0);   // Seconds Mode
+    // eeprom_write_byte((uint8_t*)EE_DRIFTCORR, 0);   // Drift Correction
+    // eeprom_write_byte((uint8_t*)EE_LDBB, 0);   //Last Digit Brightness Boost
+    
+    // eeprom_write_byte((uint8_t*)EE_TEST, 42);  //In memory of Douglas Adams
+
+//    beep(3000,2);                                   //And acknowledge EEPROM written.
+//  }
 }
 
 uint32_t t;
@@ -743,7 +753,7 @@ void gotosleep(void) {
   VFDCLK_PORT &= ~_BV(VFDCLK) & ~_BV(VFDDATA); // no power to vfdchip
   BOOST_PORT &= ~_BV(BOOST); // pull boost fet low
   TCCR0B = 0; // no boost
-  volume = 0; // low power buzzer
+///  volume = 0; // low power buzzer ???
   PCICR = 0;  // ignore buttons
 #ifdef FEATURE_AUTODIM
   DIMMER_POWER_PORT &= ~_BV(DIMMER_POWER_PIN); // no power to photoresistor
@@ -764,7 +774,6 @@ void gotosleep(void) {
   ALARM_PORT &= ~_BV(ALARM);
   ALARM_DDR &= ~_BV(ALARM);
   
-
   // reduce the clock speed
   CLKPR = _BV(CLKPCE);
   CLKPR = _BV(CLKPS3);
@@ -873,29 +882,29 @@ int main(void) {
 //    DEBUGP("vfd init");
     vfd_init();
 
+///#ifdef FEATURE_AUTODIM
+/////    DEBUGP("boost init");
+///		autodim_lo = eeprom_read_byte((uint8_t *)EE_AUTODIMLO);
+///		autodim_hi = eeprom_read_byte((uint8_t *)EE_AUTODIMHI);
+///#endif
+///    bright_level = eeprom_read_byte((uint8_t *)EE_BRIGHT);
 #ifdef FEATURE_AUTODIM
-//    DEBUGP("boost init");
-		autodim_lo = eeprom_read_byte((uint8_t *)EE_AUTODIMLO);
-		autodim_hi = eeprom_read_byte((uint8_t *)EE_AUTODIMHI);
-#endif
-    bright_level = eeprom_read_byte((uint8_t *)EE_BRIGHT);
-#ifdef FEATURE_AUTODIM
-    autodim = eeprom_read_byte((uint8_t *)EE_AUTODIM);
-		if (autodim == AUTODIM_ON)
-			boost_init(autodim_hi);  // make greeting visible
+//    autodim = eeprom_read_byte((uint8_t *)EE_AUTODIM);
+		if (globals.autodim == AUTODIM_ON)
+			boost_init(globals.autodim_hi);  // make greeting visible
 		else
 #endif
-			boost_init(bright_level);
+			boost_init(globals.bright);
     sei();
 
-    //Load and check the timezone information
-    intTimeZoneHour = eeprom_read_byte((uint8_t *)EE_ZONE_HOUR) - 12;
-    if ( ( 12 < intTimeZoneHour ) || ( -12 > intTimeZoneHour ) )
-      intTimeZoneHour = 0;
+    //check the timezone information
+///    intTimeZoneHour = eeprom_read_byte((uint8_t *)EE_ZONE_HOUR) - 12;
+    if ( ( 12 < globals.timezone_Hour ) || ( -12 > globals.timezone_Hour ) )
+      globals.timezone_Hour = 0;
 
-    intTimeZoneMin = eeprom_read_byte((uint8_t *)EE_ZONE_MIN);
-    if ( ( 60 < intTimeZoneMin ) || ( 0 > intTimeZoneMin ) )
-      intTimeZoneMin = 0;
+///    intTimeZoneMin = eeprom_read_byte((uint8_t *)EE_ZONE_MIN);
+    if ( ( 60 < globals.timezone_Min ) || ( 0 > globals.timezone_Min ) )
+      globals.timezone_Min = 0;
     
 //    DEBUGP("speaker init");
     speaker_init();
@@ -908,42 +917,41 @@ int main(void) {
 #endif
 
 // check EE memory
-uint8_t b1, b2;
-	b1 = eeprom_read_byte((uint8_t *)EE_INIT);
-	b2 = eeprom_read_byte((uint8_t *)EE_TEST);
-	if ((b1!=1) || (b2!=42)) {
+	uint8_t b1 = eeprom_read_byte((uint8_t *)EE_globals + (&globals.EEcheck1-&globals.EEcheck1));
+	uint8_t b2 = eeprom_read_byte((uint8_t *)EE_globals + (&globals.EEcheck2-&globals.EEcheck1));
+	if ((b1!=EE_CHECK) || (b2!=EE_CHECK)) {
 		beep_ms(440,2,500);  // indicate error with 2 long beeps
 	}
 
-    region = eeprom_read_byte((uint8_t *)EE_REGION); 
-#ifdef FEATURE_WmDST
-    dst_mode = eeprom_read_byte((uint8_t *)EE_DSTMODE);
-		dst_offset = eeprom_read_byte((uint8_t *)EE_DSTOFFSET);  // get last known DST Offset
-		dst_rules[0] = eeprom_read_byte((uint8_t *)EE_DST_RULE0);  // read DST rules from EE prom
-		dst_rules[1] = eeprom_read_byte((uint8_t *)EE_DST_RULE1);  // read DST rules from EE prom
-		dst_rules[2] = eeprom_read_byte((uint8_t *)EE_DST_RULE2);  // read DST rules from EE prom
-		dst_rules[3] = eeprom_read_byte((uint8_t *)EE_DST_RULE3);  // read DST rules from EE prom
-		dst_rules[4] = eeprom_read_byte((uint8_t *)EE_DST_RULE4);  // read DST rules from EE prom
-		dst_rules[5] = eeprom_read_byte((uint8_t *)EE_DST_RULE5);  // read DST rules from EE prom
-		dst_rules[6] = eeprom_read_byte((uint8_t *)EE_DST_RULE6);  // read DST rules from EE prom
-		dst_rules[7] = eeprom_read_byte((uint8_t *)EE_DST_RULE7);  // read DST rules from EE prom
-		dst_rules[8] = eeprom_read_byte((uint8_t *)EE_DST_RULE8);  // read DST rules from EE prom
-#endif
+    // region = eeprom_read_byte((uint8_t *)EE_REGION); 
+// #ifdef FEATURE_WmDST
+    // dst_mode = eeprom_read_byte((uint8_t *)EE_DSTMODE);
+		// dst_offset = eeprom_read_byte((uint8_t *)EE_DSTOFFSET);  // get last known DST Offset
+		// dst_rules[0] = eeprom_read_byte((uint8_t *)EE_DST_RULE0);  // read DST rules from EE prom
+		// dst_rules[1] = eeprom_read_byte((uint8_t *)EE_DST_RULE1);  // read DST rules from EE prom
+		// dst_rules[2] = eeprom_read_byte((uint8_t *)EE_DST_RULE2);  // read DST rules from EE prom
+		// dst_rules[3] = eeprom_read_byte((uint8_t *)EE_DST_RULE3);  // read DST rules from EE prom
+		// dst_rules[4] = eeprom_read_byte((uint8_t *)EE_DST_RULE4);  // read DST rules from EE prom
+		// dst_rules[5] = eeprom_read_byte((uint8_t *)EE_DST_RULE5);  // read DST rules from EE prom
+		// dst_rules[6] = eeprom_read_byte((uint8_t *)EE_DST_RULE6);  // read DST rules from EE prom
+		// dst_rules[7] = eeprom_read_byte((uint8_t *)EE_DST_RULE7);  // read DST rules from EE prom
+		// dst_rules[8] = eeprom_read_byte((uint8_t *)EE_DST_RULE8);  // read DST rules from EE prom
+// #endif
 #ifdef FEATURE_GPS
-    gpsEnabled = eeprom_read_byte((uint8_t *)EE_GPSENABLE);
-		if (gpsEnabled == GPS_48)
-		  uart_init(BRRL_4800);
-		else if (gpsEnabled == GPS_96)
-		  uart_init(BRRL_9600);
+    // gpsEnabled = eeprom_read_byte((uint8_t *)EE_GPSENABLE);
+	if (globals.gps_enabled == GPS_48)
+		uart_init(BRRL_4800);
+	else if (globals.gps_enabled == GPS_96)
+		uart_init(BRRL_9600);
 #endif
-#ifdef FEATURE_SECSMODE
-    secsmode = eeprom_read_byte((uint8_t *)EE_SECSMODE);
-#endif
-#ifdef FEATURE_LDBB
-    ldbb = eeprom_read_byte((uint8_t *)EE_LDBB);
-		if (ldbb > 1)
-			ldbb = 0;
-#endif			
+// #ifdef FEATURE_SECSMODE
+    // secsmode = eeprom_read_byte((uint8_t *)EE_SECSMODE);
+// #endif
+// #ifdef FEATURE_LDBB
+    // ldbb = eeprom_read_byte((uint8_t *)EE_LDBB);
+		// if (ldbb > 1)
+			// ldbb = 0;
+// #endif			
 
 		displaymode = NONE;  // prevent display update when clock ticks
 
@@ -1035,7 +1043,7 @@ uint8_t b1, b2;
       case (SET_BRIGHTNESS):
 				display_str("set brit");
 #ifdef FEATURE_AUTODIM
-				if (autodim)
+				if (globals.autodim)
 					set_autobrightness();
 				else
 #endif
@@ -1104,7 +1112,7 @@ uint8_t b1, b2;
     } 
 #ifdef FEATURE_GPS
     //Check to see if GPS data is ready:
-		if (gpsEnabled > GPS_OFF)
+		if (globals.gps_enabled > GPS_OFF)
 		{
 			if ( gpsDataReady() )   // if there is data in the buffer
 			getGPSdata();  // get the GPS serial stream and update the clock 
@@ -1135,10 +1143,11 @@ void set_alarm(void)
     } else if (!timeoutcounter) {
       //timed out!
       displaymode = SHOW_TIME;     
-      alarm_h = hour;
-      alarm_m = min;
-      eeprom_update_byte((uint8_t *)EE_ALARM_HOUR, alarm_h);    
-      eeprom_update_byte((uint8_t *)EE_ALARM_MIN, alarm_m);    
+      globals.alarm_h = hour;
+      globals.alarm_m = min;
+///      eeprom_update_byte((uint8_t *)EE_ALARM_HOUR, alarm_h);    
+///      eeprom_update_byte((uint8_t *)EE_ALARM_MIN, alarm_m);    
+			save_globals();
       return;
     }
     if (just_pressed & 0x2) {
@@ -1156,10 +1165,11 @@ void set_alarm(void)
 				display[5] |= 0x1;
       } else {
 				// done!
-				alarm_h = hour;
-				alarm_m = min;
-				eeprom_update_byte((uint8_t *)EE_ALARM_HOUR, alarm_h);    
-				eeprom_update_byte((uint8_t *)EE_ALARM_MIN, alarm_m);    
+	      globals.alarm_h = hour;
+	      globals.alarm_m = min;
+///        eeprom_update_byte((uint8_t *)EE_ALARM_HOUR, alarm_h);    
+///        eeprom_update_byte((uint8_t *)EE_ALARM_MIN, alarm_m);    
+				save_globals();
 				displaymode = SHOW_TIME;
 				return;
       }
@@ -1260,16 +1270,20 @@ void set_time(void)
 				time_s = sec;
 				displaymode = SHOW_TIME;
 #ifdef FEATURE_WmDST
-		    if (dst_mode == DST_AUTO) { // Is DST set to Auto? 16jun13/wbp
+		    if (globals.dst_mode == DST_AUTO) { // Is DST set to Auto? 16jun13/wbp
 					dst_update = DST_YES;  // Reset DST Update flag
 					setDSToffset();  // Setup Auto DST per current rules
 				}
 //				dst_update = DST_YES;  // Reset DST Update flag in case time to adjust is soon
 //				time_h = hour;  // set hour back to what was displayed
 #endif
-				eeprom_update_byte((uint8_t *)EE_HOUR, time_h);    
-				eeprom_update_byte((uint8_t *)EE_MIN, time_m);
-				eeprom_update_byte((uint8_t *)EE_SEC, time_s);
+///				eeprom_update_byte((uint8_t *)EE_HOUR, time_h);    
+///				eeprom_update_byte((uint8_t *)EE_MIN, time_m);
+///				eeprom_update_byte((uint8_t *)EE_SEC, time_s);
+				globals.time_h = time_h;
+				globals.time_m = time_m;
+				globals.time_s = time_s;
+				save_globals();
 				return;
       }
     }
@@ -1326,7 +1340,7 @@ void set_date(void) {
       just_pressed = 0;
       if (mode == SHOW_MENU) {
 	// start!
-				if (region == REGION_US) {
+				if (globals.region == REGION_US) {
 				mode = SET_MONTH;
 				}
 				else {
@@ -1336,15 +1350,15 @@ void set_date(void) {
 				display_date(DATE);
 				display[1] |= 0x1;
 				display[2] |= 0x1;
-      } else if (((mode == SET_MONTH) && (region == REGION_US)) || ((mode == SET_DAY) && (region == REGION_EU))) {
-				if (region == REGION_US)
+      } else if (((mode == SET_MONTH) && (globals.region == REGION_US)) || ((mode == SET_DAY) && (globals.region == REGION_EU))) {
+				if (globals.region == REGION_US)
 					mode = SET_DAY;
 				else
 					mode = SET_MONTH;
 				display_date(DATE);
 				display[4] |= 0x1;
 				display[5] |= 0x1;
-			} else if (((mode == SET_DAY) && (region == REGION_US)) || ((mode == SET_MONTH) && (region == REGION_EU))) {
+			} else if (((mode == SET_DAY) && (globals.region == REGION_US)) || ((mode == SET_MONTH) && (globals.region == REGION_EU))) {
 				mode = SET_YEAR;
 				display_date(DATE);
 				display[7] |= 0x1;
@@ -1355,25 +1369,26 @@ void set_date(void) {
 				delayms(1500);
 				displaymode = SHOW_TIME;
 #ifdef FEATURE_WmDST
-				if (dst_mode == DST_AUTO) {
+				if (globals.dst_mode == DST_AUTO) {
 					dst_update = DST_YES;  // Reset DST Update flag
 					setDSToffset();  // Date changed, set DST offset per current rules
 				}
 #endif
-				eeprom_update_byte((uint8_t *)EE_YEAR, date_y);    
-				eeprom_update_byte((uint8_t *)EE_MONTH, date_m);    
-				eeprom_update_byte((uint8_t *)EE_DAY, date_d);    
+//				eeprom_update_byte((uint8_t *)EE_YEAR, date_y);
+//				eeprom_update_byte((uint8_t *)EE_MONTH, date_m);
+//				eeprom_update_byte((uint8_t *)EE_DAY, date_d);
+				save_globals();
 				return;
 			}
     }
     if ((just_pressed & 0x4) || (pressed & 0x4)) {
       just_pressed = 0;
       if (mode == SET_MONTH) {
-				date_m++;
-				if (date_m >= 13)
-					date_m = 1;
+				globals.date_m++;
+				if (globals.date_m >= 13)
+					globals.date_m = 1;
 				display_date(DATE);
-				if (region == REGION_US) {
+				if (globals.region == REGION_US) {
 					display[1] |= 0x1;
 					display[2] |= 0x1;
 				} else {
@@ -1383,11 +1398,11 @@ void set_date(void) {
 //				eeprom_update_byte((uint8_t *)EE_MONTH, date_m);    
       }
       if (mode == SET_DAY) {
-				date_d++;
-				if (date_d > 31)
-					date_d = 1;
+				globals.date_d++;
+				if (globals.date_d > 31)
+					globals.date_d = 1;
 				display_date(DATE);
-				if (region == REGION_EU) {
+				if (globals.region == REGION_EU) {
 					display[1] |= 0x1;
 					display[2] |= 0x1;
 				} else {
@@ -1397,8 +1412,8 @@ void set_date(void) {
 //				eeprom_update_byte((uint8_t *)EE_DAY, date_d);    
       }
       if (mode == SET_YEAR) {
-				date_y++;
-				date_y %= 100;
+				globals.date_y++;
+				globals.date_y %= 100;
 				display_date(DATE);
 				display[7] |= 0x1;
 				display[8] |= 0x1;
@@ -1415,8 +1430,8 @@ void set_date(void) {
 
 //Function to set the time zone
 void set_timezone(void) {
-  int8_t hour = intTimeZoneHour;
-  uint8_t min = intTimeZoneMin;
+  int8_t hour = globals.timezone_Hour;
+  uint8_t min = globals.timezone_Min;
   uint8_t mode = SHOW_MENU;
   timeoutcounter = INACTIVITYTIMEOUT;
   while (1) {
@@ -1457,8 +1472,9 @@ void set_timezone(void) {
 				display_timezone(hour, min);
 				display[1] |= 0x1;
 				display[2] |= 0x1;
-        intTimeZoneHour = hour;
-				eeprom_update_byte((uint8_t *)EE_ZONE_HOUR, hour+12);
+        globals.timezone_Hour = hour;
+///				eeprom_update_byte((uint8_t *)EE_ZONE_HOUR, hour+12);
+				save_globals();
 //Debugging:
 //				uart_puts("\n\rTimezone offset hour:\t");
 //				uart_putw_dec(hour);
@@ -1468,8 +1484,9 @@ void set_timezone(void) {
 				display_timezone(hour, min);
 				display[4] |= 0x1;
 				display[5] |= 0x1;
-        intTimeZoneMin = min;
-				eeprom_update_byte((uint8_t *)EE_ZONE_MIN, min);
+        globals.timezone_Min = min;
+///				eeprom_update_byte((uint8_t *)EE_ZONE_MIN, min);
+				save_globals();
       }
       if (pressed & 0x4) {
 				tick();  // make a noise (wbp)
@@ -1481,7 +1498,7 @@ void set_timezone(void) {
 
 #ifdef FEATURE_LDBB
 void show_ldbb(void) {
-	if(ldbb > 0)
+	if(globals.ldbb > 0)
 		display_str("on  8888");
 	else
 		display_str("off 8888");
@@ -1509,7 +1526,8 @@ void set_ldbb(void) {
 				show_ldbb();
 				}
       else {	
-				eeprom_update_byte((uint8_t *)EE_LDBB, ldbb);
+///				eeprom_update_byte((uint8_t *)EE_LDBB, globals.ldbb);
+				save_globals();
 				displaymode = SHOW_TIME;
 				return;
 			}
@@ -1517,12 +1535,13 @@ void set_ldbb(void) {
     if (just_pressed & 0x4) {
       just_pressed = 0;
       if (mode == SET_LDBB) {
-				if (ldbb > 0)
-					ldbb = 0;
+				if (globals.ldbb > 0)
+					globals.ldbb = 0;
 				else
-					ldbb = 1;
+					globals.ldbb = 1;
 				show_ldbb();
-				eeprom_update_byte((uint8_t *)EE_LDBB, ldbb);
+///				eeprom_update_byte((uint8_t *)EE_LDBB, globals.ldbb);
+				save_globals();
       }
     }
   }
@@ -1531,9 +1550,9 @@ void set_ldbb(void) {
 
 #ifdef FEATURE_GPS
 void show_gpsenabled(void) {
-	if (gpsEnabled == GPS_48)
+	if (globals.gps_enabled == GPS_48)
 		display_str("gps on48");
-	else if (gpsEnabled == GPS_96)
+	else if (globals.gps_enabled == GPS_96)
 		display_str("gps on96");
 	else
 		display_str("gps off ");
@@ -1580,19 +1599,20 @@ void set_gpsenable(void) {
     if (just_pressed & 0x4) { // increment
       just_pressed = 0;
       if (mode == SET_GPS) {
-				if (gpsEnabled == GPS_OFF) {
-					gpsEnabled = GPS_48;
+				if (globals.gps_enabled == GPS_OFF) {
+					globals.gps_enabled = GPS_48;
 					uart_init(BRRL_4800);
 					}
-				else if (gpsEnabled == GPS_48) {
-					gpsEnabled = GPS_96;
+				else if (globals.gps_enabled == GPS_48) {
+					globals.gps_enabled = GPS_96;
 					uart_init(BRRL_9600);
 					}
 				else
-					gpsEnabled = GPS_OFF;
+					globals.gps_enabled = GPS_OFF;
 				show_gpsenabled();
-				eeprom_update_byte((uint8_t *)EE_GPSENABLE, gpsEnabled);
-				if (dst_mode == DST_AUTO) {
+///				eeprom_update_byte((uint8_t *)EE_GPSENABLE, gpsEnabled);
+				save_globals();
+				if (globals.dst_mode == DST_AUTO) {
 					dst_update = DST_YES;  // Reset DST Update flag
 					setDSToffset();  // Allow DST update
 				}
@@ -1637,7 +1657,8 @@ void set_brightness(void) {
     } else if (!timeoutcounter) {
       //timed out!
       displaymode = SHOW_TIME;     
-      eeprom_update_byte((uint8_t *)EE_BRIGHT, bright_level);
+///      eeprom_update_byte((uint8_t *)EE_BRIGHT, globals.bright);
+			save_globals();
       return;
     }
     if (just_pressed & 0x1) { // mode change
@@ -1650,10 +1671,11 @@ void set_brightness(void) {
 				mode = SET_BRITE;
 				// display brightness
 				display_str("brite ");
-				display_brt(bright_level);
+				display_brt(globals.bright);
       } else {	
 				displaymode = SHOW_TIME;
-				eeprom_update_byte((uint8_t *)EE_BRIGHT, bright_level);
+///				eeprom_update_byte((uint8_t *)EE_BRIGHT, globals.bright);
+				save_globals();
 				return;
       }
     }
@@ -1661,11 +1683,11 @@ void set_brightness(void) {
       just_pressed = 0;
       if (mode == SET_BRITE) {
         // Increment brightness level, wrap around at max
-				bright_level += BRITE_INCREMENT;
-				if (bright_level > BRITE_MAX) {
-					bright_level = BRITE_MIN;
+				globals.bright += BRITE_INCREMENT;
+				if (globals.bright > BRITE_MAX) {
+					globals.bright = BRITE_MIN;
 				}
-				display_brt(bright_level);
+				display_brt(globals.bright);
       }
       if (pressed & 0x4) {
 				tick();  // make a noise (wbp)
@@ -1684,7 +1706,7 @@ void display_brt(uint8_t brt) {
 
 #ifdef FEATURE_AUTODIM
 void show_autodim(void) {
-	if(autodim == AUTODIM_ON)
+	if(globals.autodim == AUTODIM_ON)
 		display_str("adim on ");
 	else
 		display_str("adim off");
@@ -1722,7 +1744,8 @@ void set_autodim(void) {
 //				display_value(1, 3, gpsCheck1);
 //				display_value(4, 5, gpsCheck2);
 			} else {	
-				eeprom_update_byte((uint8_t *)EE_AUTODIM, autodim);
+///				eeprom_update_byte((uint8_t *)EE_AUTODIM, globals.autodim);
+				save_globals();
 				displaymode = SHOW_TIME;
 				return;
 			}
@@ -1730,12 +1753,13 @@ void set_autodim(void) {
     if (just_pressed & 0x4) {
       just_pressed = 0;
       if (mode == SET_AUTODIM) {
-				if (autodim == AUTODIM_ON)
-					autodim = AUTODIM_OFF;
+				if (globals.autodim == AUTODIM_ON)
+					globals.autodim = AUTODIM_OFF;
 				else
-					autodim = AUTODIM_ON;
+					globals.autodim = AUTODIM_ON;
 				show_autodim();
-				eeprom_update_byte((uint8_t *)EE_AUTODIM, autodim);
+///				eeprom_update_byte((uint8_t *)EE_AUTODIM, globals.autodim);
+				save_globals();
       }
     }
   }
@@ -1753,9 +1777,9 @@ void display_value(unsigned char p, unsigned char n, uint16_t val) {
 void set_autobrightness(void) {  // set brightness levels if autodim on
   uint8_t mode = SHOW_MENU;
   timeoutcounter = INACTIVITYTIMEOUT;
-	autodim_lo = eeprom_read_byte((uint8_t *)EE_AUTODIMLO);
-	autodim_hi = eeprom_read_byte((uint8_t *)EE_AUTODIMHI);
-	autodim = AUTODIM_OFF;  // temporarily suspend auto dimming
+//	autodim_lo = eeprom_read_byte((uint8_t *)EE_AUTODIMLO);
+//	autodim_hi = eeprom_read_byte((uint8_t *)EE_AUTODIMHI);
+	globals.autodim = AUTODIM_OFF;  // temporarily suspend auto dimming
   while (1) {
     if (just_pressed || pressed) {
       timeoutcounter = INACTIVITYTIMEOUT;
@@ -1763,11 +1787,11 @@ void set_autobrightness(void) {  // set brightness levels if autodim on
     } else if (!timeoutcounter) {
       //timed out!
       displaymode = SHOW_TIME;     
-			autodim = AUTODIM_ON;  // turn AUTODIM back on
+			globals.autodim = AUTODIM_ON;  // turn AUTODIM back on
       return;
     }
     if (just_pressed & 0x1) { // mode change
-			autodim = AUTODIM_ON;  // turn AUTODIM back on
+			globals.autodim = AUTODIM_ON;  // turn AUTODIM back on
       return;
     }
     if (just_pressed & 0x2) {  // select button
@@ -1775,17 +1799,18 @@ void set_autobrightness(void) {  // set brightness levels if autodim on
       if (mode == SHOW_MENU) {
 				mode = SET_AUTODIMLO;
 				display_str("brtlo ");
-				display_brt(autodim_lo);
+				display_brt(globals.autodim_lo);
       } else if (mode == SET_AUTODIMLO) {
 				mode = SET_AUTODIMHI;
 				display_str("brthi ");
-				display_brt(autodim_hi);
+				display_brt(globals.autodim_hi);
 			}
 			else {	
 				displaymode = SHOW_TIME;
-				eeprom_update_byte((uint8_t *)EE_AUTODIMLO, autodim_lo);
-				eeprom_update_byte((uint8_t *)EE_AUTODIMHI, autodim_hi);
-				autodim = AUTODIM_ON;  // turn AUTODIM back on
+//				eeprom_update_byte((uint8_t *)EE_AUTODIMLO, autodim_lo);
+//				eeprom_update_byte((uint8_t *)EE_AUTODIMHI, autodim_hi);
+				save_globals();
+				globals.autodim = AUTODIM_ON;  // turn AUTODIM back on
 				return;
       }
     }
@@ -1794,19 +1819,19 @@ void set_autobrightness(void) {  // set brightness levels if autodim on
       if (mode == SET_AUTODIMLO) {
 //				autodim_lo += BRITE_INCREMENT;
 //				if (autodim_lo > BRITE_MAX) {
-				autodim_lo += 2;
-				if (autodim_lo > 50) {
-					autodim_lo = AUTO_BRITE_MIN;  // start low level really low
+				globals.autodim_lo += 2;
+				if (globals.autodim_lo > 50) {
+					globals.autodim_lo = AUTO_BRITE_MIN;  // start low level really low
 				}
-				display_brt(autodim_lo);
+				display_brt(globals.autodim_lo);
 //				eeprom_update_byte((uint8_t *)EE_AUTODIMLO, autodim_lo);
       } else if (mode == SET_AUTODIMHI) {
-				autodim_hi += BRITE_INCREMENT;
-				if (autodim_hi > BRITE_MAX) {
+				globals.autodim_hi += BRITE_INCREMENT;
+				if (globals.autodim_hi > BRITE_MAX) {
 //					autodim_hi = BRITE_MIN;
-					autodim_hi = 50;
+					globals.autodim_hi = 50;
 				}
-				display_brt(autodim_hi);
+				display_brt(globals.autodim_hi);
 //				eeprom_update_byte((uint8_t *)EE_AUTODIMHI, autodim_hi);
 			}
       if (pressed & 0x4) {  // button held down
@@ -1820,9 +1845,9 @@ void set_autobrightness(void) {  // set brightness levels if autodim on
 
 #ifdef FEATURE_WmDST
 void show_dstmode(void) {
-	if (dst_mode == DST_AUTO)
+	if (globals.dst_mode == DST_AUTO)
 		display_str("dst auto");
-	else if (dst_mode == DST_ON)
+	else if (globals.dst_mode == DST_ON)
 		display_str("dst on  ");
 	else
 		display_str("dst off ");
@@ -1860,30 +1885,35 @@ void set_dstmode(void) {
     if (just_pressed & 0x4) {  // adjust
       just_pressed = 0;
       if (mode == SET_DSTMODE) {
-				if (dst_mode == DST_ON) {
-					dst_mode = DST_AUTO;
+				if (globals.dst_mode == DST_ON) {
+					globals.dst_mode = DST_AUTO;
 					dst_update = DST_YES;  // allow DST Offset to be adjusted
 					setDSToffset();  // Set DST offset per current rules
 //					dst_update = DST_YES;  // Reset DST Update flag in case time to adjust is soon
-				} else if (dst_mode == DST_AUTO) {
-					dst_mode = DST_OFF;
-					if (dst_offset > 0) {
-						dst_offset = 0;  // no offset
+				} else if (globals.dst_mode == DST_AUTO) {
+					globals.dst_mode = DST_OFF;
+					if (globals.dst_offset > 0) {
+						globals.dst_offset = 0;  // no offset
 						time_h--;  // set clock back 1 hour
-						eeprom_update_byte((uint8_t *)EE_DSTOFFSET, dst_offset);
-						eeprom_update_byte((uint8_t *)EE_HOUR, time_h);    
+///						eeprom_update_byte((uint8_t *)EE_DSTOFFSET, dst_offset);
+///						eeprom_update_byte((uint8_t *)EE_HOUR, time_h);
+						globals.time_h = time_h;
+						save_globals();
 					}
 				} else {
-					dst_mode = DST_ON;
-					if (dst_offset == 0)  {
-						dst_offset = 1;  // offset
+					globals.dst_mode = DST_ON;
+					if (globals.dst_offset == 0)  {
+						globals.dst_offset = 1;  // offset
 						time_h++;
-						eeprom_update_byte((uint8_t *)EE_DSTOFFSET, dst_offset);
-						eeprom_update_byte((uint8_t *)EE_HOUR, time_h);    
+///						eeprom_update_byte((uint8_t *)EE_DSTOFFSET, dst_offset);
+///						eeprom_update_byte((uint8_t *)EE_HOUR, time_h);    
+						globals.time_h = time_h;
+						save_globals();
 					}
 				}
 				show_dstmode();
-				eeprom_update_byte((uint8_t *)EE_DSTMODE, dst_mode);
+//				eeprom_update_byte((uint8_t *)EE_DSTMODE, dst_mode);
+				save_globals();
       }
     }
   }
@@ -1891,7 +1921,7 @@ void set_dstmode(void) {
 
 void show_dstoffset(void)
 {
-	display_num(7, dst_offset, 0);
+	display_num(7, globals.dst_offset, 0);
 	display_str("offset ");
 }
 
@@ -1934,9 +1964,9 @@ void set_dstrules(void)
     if ((just_pressed & 0x4) || (pressed & 0x4)) {  // increment
       just_pressed = 0;
       if (mode == SET_DSTRULES) {
-				dst_rules[iRule] ++;
-				if (dst_rules[iRule] > dst_rules_hi[iRule])
-					dst_rules[iRule] = dst_rules_lo[iRule];  // wrap around
+				globals.dst_rules[iRule] ++;
+				if (globals.dst_rules[iRule] > dst_rules_hi[iRule])
+					globals.dst_rules[iRule] = dst_rules_lo[iRule];  // wrap around
 //				rules_mod[iRule] = 1;  // at least one rule has been changed
 				display_dstrule(iRule);
 //				eeprom_update_byte((uint8_t *)EE_DSTRULE0+iRule, dst_rules[iRule]);
@@ -1952,25 +1982,26 @@ void set_dstrules(void)
 //void save_dstrules(uint8_t mod[9]) {
 void save_dstrules() {
 //	uint8_t i, ch=0;
-	uint8_t i;
-	for (i = 0; i<9; i++) {
+//	uint8_t i;
+//	for (i = 0; i<9; i++) {
 //		if (mod[i]) { 
 //			ch++;
-			eeprom_update_byte((uint8_t *)EE_DST_RULE0+i, dst_rules[i]);
+//			eeprom_update_byte((uint8_t *)EE_DST_RULE0+i, dst_rules[i]);
 //		}
 //		if (ch)  {
-			dst_update = DST_YES;  // allow DST Offset to be adjusted
-	    if (dst_mode == DST_AUTO)  // Is DST set to Auto? 16jun13/wbp
-				setDSToffset();  // if rules changed, update DST offset
 //		}
-	}
+//	}
+	save_globals();
+	dst_update = DST_YES;  // allow DST Offset to be adjusted
+	if (globals.dst_mode == DST_AUTO)  // Is DST set to Auto? 16jun13/wbp
+		setDSToffset();  // if rules changed, update DST offset
 }
 
 void display_dstrule(uint8_t i) {
   display[5] = get_number(i) | 0x0;
-//  display[7] = get_number((dst_rules[i] / 10)) | 0x1;
-//  display[8] = get_number((dst_rules[i] % 10)) | 0x1;
-	display_num(7, dst_rules[i], 0x1);
+//  display[7] = get_number((globals.dst_rules[i] / 10)) | 0x1;
+//  display[8] = get_number((globals.dst_rules[i] % 10)) | 0x1;
+	display_num(7, globals.dst_rules[i], 0x1);
 }
 #endif
 
@@ -2009,7 +2040,7 @@ void set_test(void) {
 #endif
 
 void show_volume(void) {
-	if (volume) {
+	if (globals.volume) {
 		display_str("vol high");
 		display[8] |= 0x1;
 	} else {
@@ -2022,9 +2053,9 @@ void show_volume(void) {
 
 void set_volume(void) {
   uint8_t mode = SHOW_MENU;
-  uint8_t volume;
+//  uint8_t volume;
   timeoutcounter = INACTIVITYTIMEOUT;
-  volume = eeprom_read_byte((uint8_t *)EE_VOLUME);
+//  volume = eeprom_read_byte((uint8_t *)EE_VOLUME);
   while (1) {
     if (just_pressed || pressed) {
       timeoutcounter = INACTIVITYTIMEOUT;
@@ -2051,8 +2082,9 @@ void set_volume(void) {
     if (just_pressed & 0x4) {
       just_pressed = 0;
       if (mode == SET_VOL) {
-				volume = !volume;
-				eeprom_update_byte((uint8_t *)EE_VOLUME, volume);
+				globals.volume = !globals.volume;
+///				eeprom_update_byte((uint8_t *)EE_VOLUME, volume);
+				save_globals();
 				speaker_init();
 				beep(4000, 1);
 				show_volume();
@@ -2062,7 +2094,7 @@ void set_volume(void) {
 }
 
 void show_region(void) {
-	if (region == REGION_US) {
+	if (globals.region == REGION_US) {
 		display_str("usa-12hr");
 	} else {
 		display_str("eur-24hr");
@@ -2072,7 +2104,7 @@ void show_region(void) {
 void set_region(void) {
   uint8_t mode = SHOW_MENU;
   timeoutcounter = INACTIVITYTIMEOUT;
-  region = eeprom_read_byte((uint8_t *)EE_REGION);
+//  region = eeprom_read_byte((uint8_t *)EE_REGION);
   while (1) {
     if (just_pressed || pressed) {
       timeoutcounter = INACTIVITYTIMEOUT;
@@ -2100,9 +2132,10 @@ void set_region(void) {
     if (just_pressed & 0x4) {
       just_pressed = 0;
       if (mode == SET_REG) {
-				region = !region;
+				globals.region = !globals.region;
 				show_region();
-				eeprom_update_byte((uint8_t *)EE_REGION, region);
+//				eeprom_update_byte((uint8_t *)EE_REGION, region);
+				save_globals();
       }
     }
   }
@@ -2129,7 +2162,7 @@ void display_num(unsigned char pos, int8_t d, uint8_t hilite) {  // display sign
 void set_driftcorr(void) {
   uint8_t mode = SHOW_MENU;
   timeoutcounter = INACTIVITYTIMEOUT;
-  drift_corr = eeprom_read_byte((uint8_t *)EE_DRIFTCORR);
+//  drift_corr = eeprom_read_byte((uint8_t *)EE_DRIFTCORR);
   while (1) {
     if (just_pressed || pressed) {
       timeoutcounter = INACTIVITYTIMEOUT;
@@ -2149,9 +2182,10 @@ void set_driftcorr(void) {
 				mode = SET_DRIFTCORR;
 				// display drift
 				display_str("drft  ");
-				display_snum(6, drift_corr, 1);
+				display_snum(6, globals.drift_corr, 1);
       } else { 
-				eeprom_update_byte((uint8_t *)EE_DRIFTCORR, drift_corr);
+///				  eeprom_update_byte((uint8_t *)EE_DRIFTCORR, drift_corr);
+					save_globals();
 //				OCR2A = DRIFT_BASELINE + drift_corr;
 //				while (ASSR & _BV(OCR2AUB))
 //					;
@@ -2162,10 +2196,10 @@ void set_driftcorr(void) {
     if ((just_pressed & 0x4) || (pressed & 0x4)) {
       just_pressed = 0;
       if (mode == SET_DRIFTCORR) {
-        drift_corr ++;
-				if (drift_corr >= DRIFT_MAX)
-					drift_corr = DRIFT_MIN;
-				display_snum(6, drift_corr, 1);
+        globals.drift_corr ++;
+				if (globals.drift_corr >= DRIFT_MAX)
+					globals.drift_corr = DRIFT_MIN;
+				display_snum(6, globals.drift_corr, 1);
       }
       if (pressed & 0x4) {
 				tick();  // make a noise (wbp)
@@ -2179,7 +2213,7 @@ void set_driftcorr(void) {
 #ifdef FEATURE_SECSMODE
 // modes: FULL, DIAL1, DIAL2, AMPM (?), NONE
 void show_secsmode(void) {
-	switch (secsmode) {
+	switch (globals.secsmode) {
 		case SECS_FULL: display_str(" full   "); break;
 		case SECS_FULLGPS: display_str(" fullgps"); display[8] |= 0x1; break;  // full with GPS status as right most decimal
 		case SECS_DIAL1: display_str(" dial1  "); break;  // LF pattern, 6 steps, 1/sec
@@ -2216,7 +2250,8 @@ void set_secsmode(void) {
 				// display seconds mode
 				show_secsmode();
       } else { 
-				eeprom_update_byte((uint8_t *)EE_SECSMODE, secsmode);
+//				eeprom_update_byte((uint8_t *)EE_SECSMODE, secsmode);
+				save_globals();
 				displaymode = SHOW_TIME;
 				return;
       }
@@ -2224,9 +2259,9 @@ void set_secsmode(void) {
     if ((just_pressed & 0x4) || (pressed & 0x4)) {
       just_pressed = 0;
       if (mode == SET_SECSMODE) {
-        secsmode ++;
-				if (secsmode >= SECS_NMODES)  // 06may13/wbp
-					secsmode = 0;
+        globals.secsmode ++;
+				if (globals.secsmode >= SECS_NMODES)  // 06may13/wbp
+					globals.secsmode = 0;
 				show_secsmode();
       }
       if (pressed & 0x4) {  // adjust held down
@@ -2241,10 +2276,9 @@ void set_secsmode(void) {
 #ifdef FEATURE_SETSNOOZE
 void set_snoozetime(void) {
   uint8_t mode = SHOW_MENU;
-  uint8_t snooze;
-
   timeoutcounter = INACTIVITYTIMEOUT;
-  snooze = eeprom_read_byte((uint8_t *)EE_SNOOZE);
+///  uint8_t snooze;
+///  snooze = eeprom_read_byte((uint8_t *)EE_SNOOZE);
 
   while (1) {
     if (just_pressed || pressed) {
@@ -2266,10 +2300,11 @@ void set_snoozetime(void) {
 				mode = SET_SNOOZETIME;
 				// display snooze
 				display_str("   minut");
-				display_num(1, snooze, 1);
+				display_num(1, globals.snooze, 1);
       } else { 
 				display_str(" saving ");
-				eeprom_update_byte((uint8_t *)EE_SNOOZE, snooze);
+///				eeprom_update_byte((uint8_t *)EE_SNOOZE, snooze);
+				save_globals();
 				displaymode = SHOW_TIME;
 				return;
       }
@@ -2277,10 +2312,10 @@ void set_snoozetime(void) {
     if ((just_pressed & 0x4) || (pressed & 0x4)) { // button 3 - increment
       just_pressed = 0;
       if (mode == SET_SNOOZETIME) {
-        snooze ++;
-				if (snooze > 99)
-					snooze = 0;
-				display_num(1, snooze, 1);
+        globals.snooze ++;
+				if (globals.snooze > 99)
+					globals.snooze = 0;
+				display_num(1, globals.snooze, 1);
       }
       if (pressed & 0x4) {
 				tick();  // make a noise (wbp)
@@ -2297,16 +2332,19 @@ void clock_init(void) {
   // we store the time in EEPROM when switching from power modes so its
   // reasonable to start with whats in memory
 
-  date_y = eeprom_read_byte((uint8_t *)EE_YEAR) % 100;
-  date_m = eeprom_read_byte((uint8_t *)EE_MONTH) % 13;
-  date_d = eeprom_read_byte((uint8_t *)EE_DAY) % 32;
+//  date_y = eeprom_read_byte((uint8_t *)EE_YEAR) % 100;
+//  date_m = eeprom_read_byte((uint8_t *)EE_MONTH) % 13;
+//  date_d = eeprom_read_byte((uint8_t *)EE_DAY) % 32;
 	// display restored date (wbp)
 	display_date(DATE);
 	_delay_ms(500);  // wait a bit without unblocking...
 
-  time_h = eeprom_read_byte((uint8_t *)EE_HOUR) % 24;
-  time_m = eeprom_read_byte((uint8_t *)EE_MIN) % 60;
-  time_s = eeprom_read_byte((uint8_t *)EE_SEC) % 60;
+//  time_h = eeprom_read_byte((uint8_t *)EE_HOUR) % 24;
+//  time_m = eeprom_read_byte((uint8_t *)EE_MIN) % 60;
+//  time_s = eeprom_read_byte((uint8_t *)EE_SEC) % 60;
+	time_h = globals.time_h;
+	time_m = globals.time_m;
+	time_s = globals.time_s;
 	// display restored time (wbp)
   display_time(time_h, time_m, time_s);
 	_delay_ms(500);  // wait a bit without unblocking...
@@ -2319,18 +2357,19 @@ void clock_init(void) {
   time_s = TIMESEC + 10;
   */
 
-  // Set up the stored alarm time and date
-  alarm_m = eeprom_read_byte((uint8_t *)EE_ALARM_MIN) % 60;
-  alarm_h = eeprom_read_byte((uint8_t *)EE_ALARM_HOUR) % 24;
+///  // Set up the stored alarm time and date
+///  alarm_m = eeprom_read_byte((uint8_t *)EE_ALARM_MIN) % 60;
+///  alarm_h = eeprom_read_byte((uint8_t *)EE_ALARM_HOUR) % 24;
 
   restored = 1;
 
 #ifdef FEATURE_DRIFTCORR
-  drift_corr = eeprom_read_byte((uint8_t *)EE_DRIFTCORR);
+///  drift_corr = eeprom_read_byte((uint8_t *)EE_DRIFTCORR);
 //  if (drift_corr > DRIFT_MAX || drift_corr < -DRIFT_MIN) {  OOPS!
-  if (drift_corr > DRIFT_MAX || drift_corr < DRIFT_MIN) {
-    drift_corr = 0;
-    eeprom_update_byte((uint8_t *)EE_DRIFTCORR, drift_corr);
+  if (globals.drift_corr > DRIFT_MAX || globals.drift_corr < DRIFT_MIN) {
+    globals.drift_corr = 0;
+///    eeprom_update_byte((uint8_t *)EE_DRIFTCORR, globals.drift_corr);
+		save_globals();
   }
   /* 
    * Input is a (nominal) 32khz crystal.  Set:
@@ -2427,13 +2466,13 @@ uint8_t leapyear(uint16_t y) {
 /**************************** SPEAKER *****************************/
 // Set up the speaker to prepare for beeping!
 void speaker_init(void) {
-  // read the preferences for high/low volume
-  volume = eeprom_read_byte((uint8_t *)EE_VOLUME);
+///  // read the preferences for high/low volume
+///  volume = eeprom_read_byte((uint8_t *)EE_VOLUME);
   // We use the built-in fast PWM, 8 bit timer
   PORTB |= _BV(SPK1) | _BV(SPK2); 
   // Turn on PWM outputs for both pins
   TCCR1A = _BV(COM1B1) | _BV(COM1B0) | _BV(WGM11);
-  if (volume) {
+  if (globals.volume) {
     TCCR1A |= _BV(COM1A1);
   } 
   TCCR1B = _BV(WGM13) | _BV(WGM12);
@@ -2458,7 +2497,7 @@ void tick(void) {
   SPK_PORT &= ~_BV(SPK1) & ~_BV(SPK2);
 	// restore volume setting - 12oct12/wbp
   TCCR1A = _BV(COM1B1) | _BV(COM1B0) | _BV(WGM11);
-  if (volume) {  // 12oct12/wbp
+  if (globals.volume) {  // 12oct12/wbp
     TCCR1A |= _BV(COM1A1);
   } 
   TCCR1B = _BV(WGM13) | _BV(WGM12);
@@ -2505,7 +2544,7 @@ void dimmer_init(void) {
 
 // Start ADC conversion for dimmer
 void dimmer_update(void) {
-  if (autodim == AUTODIM_ON) 
+  if (globals.autodim == AUTODIM_ON) 
     ADCSRA |= _BV(ADSC);
 }
 
@@ -2514,7 +2553,7 @@ void dimmer_update(void) {
 SIGNAL(ADC_vect) {  // 328p & 168
   uint8_t low, high;
   unsigned int val;
-  if (autodim != AUTODIM_ON)
+  if (globals.autodim != AUTODIM_ON)
     return;
   // Read 2-byte value. Must read ADCL first because that locks the value.
   low = ADCL;
@@ -2525,11 +2564,11 @@ SIGNAL(ADC_vect) {  // 328p & 168
   #endif
   // Set brightness to a value between min & max based on light reading.
   if (val >= PHOTOCELL_DARK) {
-    val = autodim_lo;
+    val = globals.autodim_lo;
   } else if (val <= PHOTOCELL_LIGHT) {
-    val = autodim_hi;
+    val = globals.autodim_hi;
   } else {
-    val = autodim_hi - (((unsigned long)(autodim_hi - autodim_lo)) *
+    val = globals.autodim_hi - (((unsigned long)(globals.autodim_hi - globals.autodim_lo)) *
       (val - PHOTOCELL_LIGHT)) / (PHOTOCELL_DARK - PHOTOCELL_LIGHT);
   }
 	dimmer_lvl = val;  // save for display
@@ -2603,32 +2642,32 @@ void display_date(uint8_t style) {
     display[0] = 0;
     display[6] = display[3] = 0x02;     // put dashes between num
 
-    if (region == REGION_US) {
+    if (globals.region == REGION_US) {
       // mm-dd-yy
 //      display[1] = get_number((date_m / 10));
 //      display[2] = get_number((date_m % 10));
 //      display[4] = get_number((date_d / 10));
 //      display[5] = get_number((date_d % 10));
-			display_num(1, date_m, 0);
-			display_num(4, date_d, 0);
+			display_num(1, globals.date_m, 0);
+			display_num(4, globals.date_d, 0);
     } else {
       // dd-mm-yy
 //      display[1] = get_number((date_d / 10));
 //      display[2] = get_number((date_d % 10));
 //      display[4] = get_number((date_m / 10));
 //      display[5] = get_number((date_m % 10));
-			display_num(1, date_d, 0);
-			display_num(4, date_m, 0);
+			display_num(1, globals.date_d, 0);
+			display_num(4, globals.date_m, 0);
     }
     // the yy part is the same
 //    display[7] = get_number((date_y / 10));
 //    display[8] = get_number((date_y % 10));
-		display_num(7, date_y, 0);
+		display_num(7, globals.date_y, 0);
   } else if (style == DAY) {
     // This is more "Sunday June 21" style
     // Display the day first
     display[8] = display[7] = 0;
-    switch (dotw(date_y, date_m, date_d)) {
+    switch (dotw(globals.date_y, globals.date_m, globals.date_d)) {
     case 1:
       display_str("sunday"); break;
     case 2:
@@ -2650,7 +2689,7 @@ void display_date(uint8_t style) {
 
     // Then display the month and date
     display[6] = display[5] = display[4] = 0;
-    switch (date_m) {
+    switch (globals.date_m) {
     case 1:
       display_str("jan"); break;
     case 2:
@@ -2678,7 +2717,7 @@ void display_date(uint8_t style) {
     }
 //    display[7] = get_number((date_d / 10));
 //    display[8] = get_number((date_d % 10));
-		display_num(7, date_d, 0);
+		display_num(7, globals.date_d, 0);
 
     // wait one second about
     delayms(1000);
@@ -2688,7 +2727,7 @@ void display_date(uint8_t style) {
 //    display[3] = get_number((date_y / 100));  // testing (wbp)
 //    display[4] = get_number((date_y / 10));
 //    display[5] = get_number((date_y % 10));
-		display_num(4, date_y, 0);
+		display_num(4, globals.date_y, 0);
 //    display[8] = display[7] = display[6] = display[5] = 0;
     
   }
@@ -2700,13 +2739,13 @@ void display_time(uint8_t h, uint8_t m, uint8_t s) {
 #ifdef FEATURE_SECSMODE
 	if (displaymode == SHOW_TIME)  {  // secsmode only active if displaymode is SHOW_TIME
 	uint16_t ss;
-	 switch (secsmode)  {
+	 switch (globals.secsmode)  {
 		case SECS_FULL:  // full
 			display_num(7, s, 0);
 			break;
 		case SECS_FULLGPS:  // full gps - use dp to show GPS status - solid if good signal
 			display_num(7, s, 0);  // display seconds (clears dp)
-			if (gpsEnabled) {
+			if (globals.gps_enabled) {
 				if (gpsTimeout<gpsTimeout1) {
 					display[8] |= 1;  // solid dp indicates good gps signal reception
 				}
@@ -2747,14 +2786,14 @@ void display_time(uint8_t h, uint8_t m, uint8_t s) {
 			else
 				display[7] = get_alpha('p');
 			display[8] = get_alpha('m');
-			if (secsmode == SECS_AMPMDOT)  // blink decimal point
+			if (globals.secsmode == SECS_AMPMDOT)  // blink decimal point
 				display[8] |= (s&1);
 			break;
 		case SECS_NONE:   // none
 		case SECS_NONEDOT:   // none blink
 			display[7] = 0;
 			display[8] = 0;
-			if (secsmode == SECS_NONEDOT)  // blink decimal point
+			if (globals.secsmode == SECS_NONEDOT)  // blink decimal point
 				display[8] |= (s&1);
 			break;
 		}
@@ -2768,7 +2807,7 @@ void display_time(uint8_t h, uint8_t m, uint8_t s) {
   display[3] = 0;  // blank
 
   // check euro (24h) or US (12h) style time
-  if (region == REGION_US) {
+  if (globals.region == REGION_US) {
     display[2] =  get_number(( (((h+11)%12)+1) % 10));
     if ((((h+11)%12)+1) / 10 == 0 ) {
       display[1] =  0;
@@ -2798,7 +2837,7 @@ void display_alarm(uint8_t h, uint8_t m){
   display[3] = 0;
 
   // check euro or US style time
-  if (region == REGION_US) {
+  if (globals.region == REGION_US) {
     if (h >= 12) {
       display[0] |= 0x1;  // 'pm' notice
       display[7] = get_alpha('p');
@@ -3064,15 +3103,15 @@ void setgpstime(char* str) {
   intTempSec = (str[4] - '0') * 10;
   intTempSec = intTempSec + (str[5] - '0');
 #ifdef FEATURE_WmDST
-  time_h = intTempHr + intTimeZoneHour + dst_offset;
+  time_h = intTempHr + globals.timezone_Hour + globals.dst_offset;
 #else
-  time_h = intTempHr + intTimeZoneHour;
+  time_h = intTempHr + globals.timezone_Hour;
 #endif
   //If the time zone offset is negative, then subtract minutes
-  if ( 0 > intTimeZoneHour )
-    time_m = intTempMin - intTimeZoneMin;
+  if ( 0 > globals.timezone_Hour )
+    time_m = intTempMin - globals.timezone_Min;
   else
-    time_m = intTempMin + intTimeZoneMin;
+    time_m = intTempMin + globals.timezone_Min;
   time_s = intTempSec;
   timeknown = 1;  // time is now known
 }
@@ -3089,9 +3128,9 @@ void setgpsdate(char* str) {
   intTempYr = (str[4] - '0') * 10;
   intTempYr = intTempYr + (str[5] - '0');
 //  restored = 0;  // was used to prevent saving time in ee when going to sleep (why???)
-  date_d = intTempDay;
-  date_m = intTempMon;
-  date_y = intTempYr;
+  globals.date_d = intTempDay;
+  globals.date_m = intTempMon;
+  globals.date_y = intTempYr;
   dateknown = 1;  // date is now known
 }
 #endif
@@ -3141,27 +3180,32 @@ void fix_time(void) {
   }
 
 #ifdef FEATURE_GPS
-	if ((time_s == 0) && (time_m == 0) && (gpsEnabled == GPS_OFF))  {  // on the hour?
+	if ((time_s == 0) && (time_m == 0) && (globals.gps_enabled == GPS_OFF))  {  // on the hour?
 #else
 	if ((time_s == 0) && (time_m == 0))  {  // on the hour?
 #endif
     // let's write the time to the EEPROM - done once per hour but only if GPS is off
 		// at 100,000 write cycles this should be good for about 4100 days...
-    eeprom_update_byte((uint8_t *)EE_HOUR, time_h);
-    eeprom_update_byte((uint8_t *)EE_MIN, time_m);
+///    eeprom_update_byte((uint8_t *)EE_HOUR, time_h);
+///    eeprom_update_byte((uint8_t *)EE_MIN, time_m);
+		globals.time_h = time_h;
+		globals.time_m = time_m;
+		save_globals();
 	}
 
   // a day....
   if (time_h >= 24) {
     time_h = time_h - 24;
-    date_d++;
-    eeprom_update_byte((uint8_t *)EE_DAY, date_d);
+    globals.date_d++;
+///    eeprom_update_byte((uint8_t *)EE_DAY, date_d);
+		save_globals();
   }
   // When offsets create negative hours...
   if (time_h < 0) {
     time_h = 24 + time_h;
-    date_d--;
-    eeprom_update_byte((uint8_t *)EE_DAY, date_d);
+    globals.date_d--;
+///    eeprom_update_byte((uint8_t *)EE_DAY, date_d);
+		save_globals();
   }
   
   //if (! sleepmode) {
@@ -3175,18 +3219,19 @@ void fix_time(void) {
   
   // a full month!
   // we check the leapyear and date to verify when it's time to roll over months
-  if ((date_d > 31) ||
-      ((date_d == 31) && ((date_m == 4)||(date_m == 6)||(date_m == 9)||(date_m == 11))) ||
-      ((date_d == 30) && (date_m == 2)) ||
-      ((date_d == 29) && (date_m == 2) && !leapyear(2000+date_y))) {
-    date_d = 1;
-    date_m++;
-    eeprom_update_byte((uint8_t *)EE_MONTH, date_m);
+  if ((globals.date_d > 31) ||
+      ((globals.date_d == 31) && ((globals.date_m == 4)||(globals.date_m == 6)||(globals.date_m == 9)||(globals.date_m == 11))) ||
+      ((globals.date_d == 30) && (globals.date_m == 2)) ||
+      ((globals.date_d == 29) && (globals.date_m == 2) && !leapyear(2000+globals.date_y))) {
+    globals.date_d = 1;
+    globals.date_m++;
+///    eeprom_update_byte((uint8_t *)EE_MONTH, date_m);
+		save_globals();
   }
   // When offsets create negative days...
-  if (date_d < 1) {
+  if (globals.date_d < 1) {
     //Find which month we are going back to:
-    switch (date_m) {
+    switch (globals.date_m) {
       case 1: //January -> December
       case 2: //February -> January
       case 4: //April -> March
@@ -3194,53 +3239,56 @@ void fix_time(void) {
       case 8: //August -> July
       case 9: //September -> August
       case 11: //November -> October
-        date_d = 31 + date_d;
-        date_m--;
+        globals.date_d = 31 + globals.date_d;
+        globals.date_m--;
         break;
       case 5: //May -> April
       case 7: //July -> June
       case 10: //October -> September
       case 12: //December -> November
-        date_d = 30 + date_d;
-        date_m--;
+        globals.date_d = 30 + globals.date_d;
+        globals.date_m--;
         break;
       case 3: //March -> February, the fun case
         //If we are in a leapyear, February is 29 days long...
-        if ( leapyear(2000+date_y) )
-          date_d = 29 + date_d;
+        if ( leapyear(2000+globals.date_y) )
+          globals.date_d = 29 + globals.date_d;
         else //otherwise, it is 28 days long...
-          date_d = 28 + date_d;
-        date_m--;
+          globals.date_d = 28 + globals.date_d;
+        globals.date_m--;
         break;
       default:
-        date_d = 1;
+        globals.date_d = 1;
         break;
     }
-    eeprom_update_byte((uint8_t *)EE_MONTH, date_m);
+///    eeprom_update_byte((uint8_t *)EE_MONTH, date_m);
+		save_globals();
   }
   
   // HAPPY NEW YEAR!
-  if (date_m > 12) {
-    date_y++;
-    date_m = 1;
-    eeprom_update_byte((uint8_t *)EE_YEAR, date_y);
+  if (globals.date_m > 12) {
+    globals.date_y++;
+    globals.date_m = 1;
+///    eeprom_update_byte((uint8_t *)EE_YEAR, date_y);
+		save_globals();
   }
   //This takes away the years and is cheaper than any cream you can buy...
-  if (date_m < 1) {
-    date_m = 12 + date_m;
-    date_y--;
-    eeprom_update_byte((uint8_t *)EE_YEAR, date_y);
-    eeprom_update_byte((uint8_t *)EE_MONTH, date_m);
+  if (globals.date_m < 1) {
+    globals.date_m = 12 + globals.date_m;
+    globals.date_y--;
+///    eeprom_update_byte((uint8_t *)EE_YEAR, date_y);
+///    eeprom_update_byte((uint8_t *)EE_MONTH, date_m);
+		save_globals();
   }
 
 #ifdef FEATURE_WmDST
 	if (time_s == 0) {  // done once a minute - overkill but it will update for DST when clock is booted or time is adjusted
-    if (dst_mode == DST_AUTO)  //Check daylight saving time.
+    if (globals.dst_mode == DST_AUTO)  //Check daylight saving time.
 			setDSToffset();  // set DST offset based on DST rules
-//		else if(dst_mode == DST_ON) 
-//			dst_offset = 1;  // fixed offset
+//		else if(globals.dst_mode == DST_ON) 
+//			globals.dst_offset = 1;  // fixed offset
 //		else
-//			dst_offset = 0;  // no offset
+//			globals.dst_offset = 0;  // no offset
 		if ((time_m == 0) && (time_h == 0))  // Midnight?
 			dst_update = DST_YES;  // Reset DST Update flag at midnight
 	}
@@ -3281,8 +3329,8 @@ long DSTseconds(uint8_t year, uint8_t month, uint8_t doftw, uint8_t week, uint8_
 // adjust dst offset and save values in ee prom
 void adjDSToffset(uint8_t offset)
 {
-	int8_t adj = offset - dst_offset;
-	if ((dst_offset != offset) && (dst_update == DST_YES)) {
+	int8_t adj = offset - globals.dst_offset;
+	if ((globals.dst_offset != offset) && (dst_update == DST_YES)) {
 		if (adj>0) { // add to hour?
 			beep(440,1);
 			beep(880,1);
@@ -3291,10 +3339,12 @@ void adjDSToffset(uint8_t offset)
 			beep(880,1);
 			beep(440,1);
 		}
-		dst_offset = offset;
+		globals.dst_offset = offset;
 		time_h += adj;  // if this is the first time, bump the hour
-		eeprom_update_byte((uint8_t *)EE_DSTOFFSET, offset);  // remember setting for power up
-		eeprom_update_byte((uint8_t *)EE_HOUR, time_h);    
+///		eeprom_update_byte((uint8_t *)EE_DSTOFFSET, offset);  // remember setting for power up
+///		eeprom_update_byte((uint8_t *)EE_HOUR, time_h);
+		globals.time_h = time_h;
+		save_globals();
 		dst_update = DST_NO;  // OK, it's done, don't do it again today
 	}
 }
@@ -3306,19 +3356,19 @@ void adjDSToffset(uint8_t offset)
 // 		3,1,2,2,  11,1,1,2,  1
 void setDSToffset()
 {
-	uint8_t month1 = dst_rules[0];
-	uint8_t dotw1 = dst_rules[1];
-	uint8_t n1 = dst_rules[2];  // nth dotw
-	uint8_t hour1 = dst_rules[3];
-	uint8_t month2 = dst_rules[4];
-	uint8_t dotw2 = dst_rules[5];
-	uint8_t n2 = dst_rules[6];
-	uint8_t hour2 = dst_rules[7];
-	uint8_t offset = dst_rules[8];
+	uint8_t month1 = globals.dst_rules[0];
+	uint8_t dotw1 = globals.dst_rules[1];
+	uint8_t n1 = globals.dst_rules[2];  // nth dotw
+	uint8_t hour1 = globals.dst_rules[3];
+	uint8_t month2 = globals.dst_rules[4];
+	uint8_t dotw2 = globals.dst_rules[5];
+	uint8_t n2 = globals.dst_rules[6];
+	uint8_t hour2 = globals.dst_rules[7];
+	uint8_t offset = globals.dst_rules[8];
 	// if current time & date is at or past the first DST rule and before the second, set dst_offset, otherwise reset dst_offset
-  long dst_start = DSTseconds(date_y, month1, dotw1, n1, hour1);  // seconds til DST starts this year
-  long dst_end = DSTseconds(date_y, month2, dotw2, n2, hour2);  // seconds til DST ends this year
-  long seconds_now = yearSeconds(date_y, date_m, date_d, time_h, time_m, time_s);  //time now in seconds this year
+  long dst_start = DSTseconds(globals.date_y, month1, dotw1, n1, hour1);  // seconds til DST starts this year
+  long dst_end = DSTseconds(globals.date_y, month2, dotw2, n2, hour2);  // seconds til DST ends this year
+  long seconds_now = yearSeconds(globals.date_y, globals.date_m, globals.date_d, time_h, time_m, time_s);  //time now in seconds this year
 	if (dst_end>dst_start) {  // dst end later than start - northern hemisphere
 		if ((seconds_now >= dst_start) && (seconds_now < dst_end)) { // spring ahead
 			adjDSToffset(offset);
@@ -3428,8 +3478,8 @@ void testmode(uint8_t force) {
       #ifdef FEATURE_AUTODIM
       if(!j)
       {
-        blevel = bright_level;
-        bright_level = 0;  // turn display off ???
+        blevel = globals.bright;
+        globals.bright = 0;  // turn display off ???
         dimmer_update();
         j = 1;
         //dimmer_update();
@@ -3445,13 +3495,13 @@ void testmode(uint8_t force) {
       {
         if(blevel!=0xFF)
         {
-          bright_level = blevel;
+          globals.bright = blevel;
           set_vfd_brightness(blevel);
         }
         j=0;
         for(i=0;i<9;i++)
           display[i] = 0;
-        //set_vfd_brightness(bright_level);
+        //set_vfd_brightness(globals.bright);
       }
       #endif
       
@@ -3494,7 +3544,7 @@ void testmode(uint8_t force) {
             {
               if(blevel)
               {
-                bright_level = blevel;
+                globals.bright = blevel;
                 set_vfd_brightness(blevel);
               }
               else

@@ -1,7 +1,8 @@
 /***************************************************************************
  Ice Tube Clock with GPS firmware November 15, 2011
- (c) 2012 William B Phelps
+ (c) 2012-2013 William B Phelps
  
+ 29dec13 - put EE variables in single structure 
  27sep12 - support GPS 9600 bps
  25jul12 - add GPS checksum
  25jul12 - stop alarm going off at midnight
@@ -120,47 +121,41 @@ THE SOFTWARE.
 #define PHOTOCELL_DARK 1010
 #define PHOTOCELL_LIGHT 100  // wbp (was 500)
 
-// EE Memory addresses
-#define EE_INIT 0
-#define EE_YEAR 1
-#define EE_MONTH 2
-#define EE_DAY 3
-#define EE_HOUR 4
-#define EE_MIN 5
-#define EE_SEC 6
-#define EE_ALARM_HOUR 7 
-#define EE_ALARM_MIN 8
-#define EE_SNOOZE 9
-#define EE_BRIGHT 10  
-#define EE_VOLUME 11
-#define EE_REGION 12
+// variables kept in EE
+#define EE_CHECK 40 // globals structure version
+#define EE_globals 0 // eeprom address
 
-#define EE_ZONE_HOUR 13
-#define EE_ZONE_MIN 14
-
-#define EE_DSTMODE 15
-#define EE_GPSENABLE 16
-
-#define EE_AUTODIM 17
-#define EE_AUTODIMLO 18
-#define EE_AUTODIMHI 19
-
-#define EE_DST_RULE0 20
-#define EE_DST_RULE1 21
-#define EE_DST_RULE2 22
-#define EE_DST_RULE3 23
-#define EE_DST_RULE4 24
-#define EE_DST_RULE5 25
-#define EE_DST_RULE6 26
-#define EE_DST_RULE7 27
-#define EE_DST_RULE8 28
-#define EE_DSTOFFSET 29
-
-#define EE_DRIFTCORR 30
-#define EE_LDBB 31
-#define EE_SECSMODE 32
-
-#define EE_TEST 33
+struct __globals
+{
+	uint8_t EEcheck1;
+	uint8_t date_y;
+	uint8_t date_m;
+	uint8_t date_d;
+	uint8_t time_h;
+	uint8_t time_m;
+	uint8_t time_s;
+	uint8_t alarm_h;
+	uint8_t alarm_m;
+	uint8_t bright;
+	uint8_t bright_min;
+	uint8_t bright_max;
+	uint8_t volume;
+	uint8_t region;
+	uint8_t snooze;
+	uint8_t gps_enabled;
+	int8_t  timezone_Hour; // -12 to 12 ?
+	uint8_t timezone_Min;
+	uint8_t autodim;
+	uint8_t autodim_lo;
+	uint8_t autodim_hi;
+	uint8_t dst_mode;
+	uint8_t dst_rules[9];
+	uint8_t dst_offset;
+	uint8_t drift_corr;
+	uint8_t ldbb;
+	uint8_t secsmode;
+	uint8_t EEcheck2;
+};
 
 #define BEEP_8KHZ 5
 #define BEEP_4KHZ 10
